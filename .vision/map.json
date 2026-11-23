@@ -1,0 +1,3165 @@
+{
+  "meta": {
+    "title": "GPT Training Flow",
+    "subtitle": "Full_Architecture.ipynb · the-verdict.txt · seed 123 · study lines from the tokenizer, dataloader, attention and rnn notebooks",
+    "sizeUnit": "numbers",
+    "valuesLabel": "Real values",
+    "artifact": "https://claude.ai/artifact/LLXQW3mnEHZgidD6MMqcoW",
+    "commit": "6d2991a8733220c4ab25dc2afc879aec837a0179",
+    "stamped": "2026-11-05 (with uncommitted work)"
+  },
+  "kinds": [
+    {"id": "data", "label": "Prepare data", "shape": "circle"},
+    {"id": "model", "label": "Model forward pass", "shape": "square"},
+    {"id": "learn", "label": "Learn", "shape": "triangle"},
+    {"id": "check", "label": "Check progress", "shape": "hexagon"},
+    {"id": "byhand", "label": "Work it out by hand", "shape": "diamond"},
+    {"id": "module", "label": "Package it as a class or library", "shape": "square"}
+  ],
+  "flows": [
+    {
+      "id": "train",
+      "name": "Train the model",
+      "what": "One training step, from raw text to updated weights, repeated 9 times an epoch for 10 epochs.",
+      "steps": [
+        {
+          "id": "text",
+          "name": "Text corpus",
+          "sub": "the-verdict.txt",
+          "kind": "data",
+          "what": "The raw training text: one short story, read as a single string.",
+          "in": "file on disk",
+          "out": "str · 20,479 characters",
+          "shape": "20,479 chars",
+          "size": 20479,
+          "code": {"key": "data_setup", "highlight": ["open(", "text_data = f.read()"]},
+          "files": [
+            {"path": "the-verdict.txt", "note": "The training text, 20,479 characters"},
+            {"path": "Full_Architecture.ipynb", "note": "Cell 15 · reads the file and splits it"},
+            {"path": "tokenizer.ipynb", "note": "Downloads the file and explores it"}
+          ],
+          "values": [
+            {
+              "type": "quote",
+              "title": "How it starts",
+              "text": "I HAD always thought Jack Gisburn rather a cheap genius…",
+              "ref": "doc:the-verdict.txt"
+            },
+            {
+              "type": "kv",
+              "title": "Size",
+              "rows": [["Characters", "20,479", "out:Full_Architecture.ipynb#15"], ["Distinct characters", "62"]]
+            }
+          ],
+          "flags": [
+            {
+              "text": "Cell 15 prints len(tokenizer.encode(text_data)), but no cell in Full_Architecture.ipynb defines tokenizer (cell 17 passes it to training too). Run top to bottom in a fresh kernel, the notebook stops here with a NameError.",
+              "refs": ["undef:Full_Architecture.ipynb#tokenizer"]
+            }
+          ]
+        },
+        {
+          "id": "tokenize",
+          "name": "Tokenize",
+          "sub": "text → token IDs",
+          "kind": "data",
+          "what": "Split the text 90 / 10, then turn each half into GPT-2 token IDs.",
+          "in": "str · 20,479 chars",
+          "out": "4,612 train IDs · 534 val IDs",
+          "shape": "4,612 IDs",
+          "size": 4612,
+          "code": {
+            "key": "create_dataloader_v1",
+            "highlight": ["tiktoken.get_encoding", "GPTDatasetV1(txt"]
+          },
+          "files": [
+            {
+              "path": "Full_Architecture.ipynb",
+              "note": "Cell 1 · GPTDatasetV1 calls tokenizer.encode"
+            },
+            {
+              "path": "Full_Architecture.ipynb",
+              "note": "Cell 2 · create_dataloader_v1 loads tiktoken"
+            },
+            {"path": "tokenizer.ipynb", "note": "Your SimpleTokenizerV1 and V2, then tiktoken"}
+          ],
+          "children": [
+            {
+              "id": "split",
+              "name": "Split 90 / 10",
+              "sub": "by characters",
+              "kind": "data",
+              "what": "Cut at 90% of the characters: train before the cut, validation after.",
+              "in": "20,479 chars",
+              "out": "18,431 + 2,048 chars",
+              "shape": "18,431 chars",
+              "size": 18431,
+              "code": {"key": "data_setup", "highlight": ["split_idx", "train_data = ", "val_data = "]},
+              "values": [
+                {
+                  "type": "ratio",
+                  "title": "Where the cut falls",
+                  "note": "split_idx = int(0.9 × 20,479) = 18,431",
+                  "parts": [
+                    {"label": "train", "value": 18431, "tone": "neg"},
+                    {"label": "validation", "value": 2048, "tone": "muted"}
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "encode",
+              "name": "BPE encode",
+              "sub": "tiktoken · gpt2",
+              "kind": "data",
+              "what": "Byte-pair encoding maps each piece of text to one of 50,257 vocabulary IDs.",
+              "in": "18,431 chars",
+              "out": "4,612 IDs",
+              "shape": "4,612 IDs",
+              "size": 4612,
+              "code": {"key": "GPTDatasetV1", "highlight": ["tokenizer.encode"]},
+              "values": [
+                {
+                  "type": "chips",
+                  "title": "The first 8 IDs",
+                  "note": "\"HAD\" became \" H\" + \"AD\". Tokens are pieces of words.",
+                  "rows": [
+                    {
+                      "label": "id",
+                      "items": [["40", "I"], ["367", " H"], ["2885", "AD"], ["1464", " always"], ["1807", " thought"], ["3619", " Jack"], ["402", " G"], ["271", "is"]]
+                    }
+                  ]
+                },
+                {
+                  "type": "kv",
+                  "title": "Counts",
+                  "rows": [["Train tokens", "4,612"], ["Validation tokens", "534"], ["Vocabulary", "50,257"]]
+                }
+              ]
+            }
+          ],
+          "triggers": [
+            {
+              "flow": "tokenizer",
+              "when": "how tokenizer.ipynb builds a tokenizer, from a regex split to GPT-2’s BPE"
+            }
+          ]
+        },
+        {
+          "id": "batch",
+          "name": "Batch",
+          "sub": "input / target windows",
+          "kind": "data",
+          "what": "Cut the IDs into 256-token windows, pair each with its target, and group the windows in twos.",
+          "in": "4,612 IDs",
+          "out": "inputs (2, 256) · targets (2, 256)",
+          "shape": "(2, 256) ×2",
+          "size": 1024,
+          "code": {"key": "create_dataloader_v1", "highlight": ["DataLoader(", "batch_size=batch_size"]},
+          "files": [
+            {
+              "path": "Full_Architecture.ipynb",
+              "note": "Cells 1, 2 and 15 · dataset, loader, train and val loaders"
+            },
+            {"path": "dataloader.ipynb", "note": "Where you first built GPTDatasetV1"},
+            {"path": "practice.ipynb", "note": "Your practice loader, 8 windows of 8"}
+          ],
+          "children": [
+            {
+              "id": "window",
+              "name": "Sliding window",
+              "sub": "stride 256",
+              "kind": "data",
+              "what": "Start a new window every 256 tokens.",
+              "in": "4,612 IDs",
+              "out": "18 windows of 256",
+              "shape": "18 windows",
+              "size": 4608,
+              "code": {"key": "GPTDatasetV1", "highlight": ["for i in range"]},
+              "values": [
+                {
+                  "type": "segments",
+                  "title": "18 windows cover the training half",
+                  "note": "The last 4 tokens never start a window.",
+                  "count": 18,
+                  "each": 256,
+                  "total": 4612,
+                  "startLabel": "token 0",
+                  "endLabel": "4,612"
+                }
+              ]
+            },
+            {
+              "id": "shift",
+              "name": "Shift by one",
+              "sub": "target = next token",
+              "kind": "data",
+              "what": "Each target window is its input window moved one token to the left.",
+              "in": "one window",
+              "out": "(256,) input · (256,) target",
+              "shape": "(256,) ×2",
+              "size": 512,
+              "code": {"key": "GPTDatasetV1", "highlight": ["input_chunk = ", "target_chunk = "]},
+              "values": [
+                {
+                  "type": "chips",
+                  "title": "First window of the first shuffled batch",
+                  "note": "Matching IDs line up: every target is the next input.",
+                  "rows": [
+                    {
+                      "label": "input",
+                      "items": [["503", " out"], ["4291", " onto"], ["262", " the"], ["4252", " sun"], ["18250", "lit"], ["8812", " terr"], ["558", "ace"], ["13", "."]]
+                    },
+                    {
+                      "label": "target",
+                      "items": [["4291", " onto"], ["262", " the"], ["4252", " sun"], ["18250", "lit"], ["8812", " terr"], ["558", "ace"], ["13", "."], ["198", "\\n"]],
+                      "offset": 1
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "shuffle",
+              "name": "Shuffle",
+              "sub": "new order each epoch",
+              "kind": "data",
+              "type": "op",
+              "what": "Visit the 18 windows in a random order.",
+              "in": "18 windows",
+              "out": "18 windows, reordered",
+              "shape": "18 windows",
+              "size": 4608,
+              "code": {"key": "create_dataloader_v1", "highlight": ["shuffle=shuffle"]}
+            },
+            {
+              "id": "stack",
+              "name": "Stack in twos",
+              "sub": "batch_size = 2",
+              "kind": "data",
+              "what": "Two windows become one batch. A short last batch would be dropped.",
+              "in": "2 × (256,)",
+              "out": "(2, 256) ×2",
+              "shape": "(2, 256) ×2",
+              "size": 1024,
+              "code": {
+                "key": "create_dataloader_v1",
+                "highlight": ["batch_size=batch_size", "drop_last=True"]
+              },
+              "values": [
+                {
+                  "type": "kv",
+                  "title": "Per epoch",
+                  "rows": [["Training batches", "9"], ["Validation batches", "1"], ["Predictions per batch", "512"]]
+                }
+              ],
+              "flags": [
+                {
+                  "text": "create_dataloader_v1 takes a drop_last argument but passes drop_last=True to DataLoader, so val_loader’s drop_last=False is ignored. No effect in this run: the validation half makes exactly one full batch."
+                }
+              ]
+            }
+          ],
+          "triggers": [
+            {
+              "flow": "dataloader",
+              "when": "how dataloader.ipynb builds the input and target windows"
+            }
+          ]
+        },
+        {
+          "id": "model",
+          "name": "GPT model",
+          "sub": "162.4M weights",
+          "kind": "model",
+          "what": "Predict the next token at every position of every window.",
+          "in": "inputs (2, 256)",
+          "out": "logits (2, 256, 50257)",
+          "shape": "(2, 256, 50257)",
+          "size": 25731584,
+          "weights": "162,419,712",
+          "code": {"key": "GPTModel"},
+          "files": [
+            {"path": "Full_Architecture.ipynb", "note": "Cell 10 · class GPTModel"},
+            {"path": "Untitled.ipynb", "note": "DummyGPTModel, your chapter 4 draft"}
+          ],
+          "children": [
+            {
+              "id": "emb",
+              "name": "Embeddings",
+              "sub": "token + position",
+              "kind": "model",
+              "what": "Look up a vector for every token and every position, and add them.",
+              "in": "(2, 256) IDs",
+              "out": "(2, 256, 768)",
+              "shape": "(2, 256, 768)",
+              "size": 393216,
+              "weights": "38,793,984",
+              "code": {
+                "key": "GPTModel",
+                "highlight": ["self.tok_emb", "self.pos_emb", "x = tok_embeds", "drop_emb"]
+              },
+              "files": [
+                {"path": "Full_Architecture.ipynb", "note": "Cell 10 · tok_emb and pos_emb"},
+                {"path": "dataloader.ipynb", "note": "Your first token and position embeddings"}
+              ],
+              "children": [
+                {
+                  "id": "tok",
+                  "name": "Token lookup",
+                  "sub": "50,257 × 768 table",
+                  "kind": "model",
+                  "what": "Each token ID picks its row of the table.",
+                  "in": "(2, 256) IDs",
+                  "out": "(2, 256, 768)",
+                  "shape": "(2, 256, 768)",
+                  "size": 393216,
+                  "weights": "38,597,376",
+                  "code": {"key": "GPTModel", "highlight": ["self.tok_emb"]},
+                  "values": [
+                    {
+                      "type": "vectors",
+                      "title": "Row 503, the token \" out\" (first 24 of 768)",
+                      "note": "Random starting values. Training moves them.",
+                      "rows": [
+                        {
+                          "label": "\" out\"",
+                          "data": [0.696, 0.66, -0.09, 0.147, -0.223, -0.047, -0.064, 1.086, 1.374, 1.98, -1.462, 0.794, 0.789, -0.146, 0.669, -0.554, 0.755, -0.551, 1.194, 0.741, -0.172, 2.669, 0.682, 0.155]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "pos",
+                  "name": "Position lookup",
+                  "sub": "256 × 768 table",
+                  "kind": "model",
+                  "what": "Each position from 0 to 255 picks its row.",
+                  "in": "positions 0–255",
+                  "out": "(256, 768)",
+                  "shape": "(256, 768)",
+                  "size": 196608,
+                  "weights": "196,608",
+                  "code": {"key": "GPTModel", "highlight": ["self.pos_emb"]},
+                  "values": [
+                    {
+                      "type": "vectors",
+                      "title": "Row 0, the first position (first 24 of 768)",
+                      "rows": [
+                        {
+                          "label": "pos 0",
+                          "data": [0.877, 0.255, 0.844, -0.509, 0.345, -0.211, -0.704, 0.423, 0.427, 0.369, -1.128, 2.474, 2.028, -1.003, -0.636, -0.001, 0.372, -0.73, -0.105, 0.716, -0.509, 1.52, -0.551, -0.322]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "add",
+                  "name": "Add",
+                  "sub": "token + position",
+                  "kind": "model",
+                  "type": "add",
+                  "what": "Add the position rows onto every sequence in the batch.",
+                  "in": "(2, 256, 768) + (256, 768)",
+                  "out": "(2, 256, 768)",
+                  "shape": "(2, 256, 768)",
+                  "size": 393216,
+                  "code": {"key": "GPTModel", "highlight": ["x = tok_embeds + pos_embeds"]},
+                  "values": [
+                    {
+                      "type": "vectors",
+                      "title": "\" out\" at position 0, first 24 numbers",
+                      "note": "The spread of the batch is now 1.41: two tables of spread 1, added.",
+                      "rows": [
+                        {
+                          "label": "token",
+                          "data": [0.696, 0.66, -0.09, 0.147, -0.223, -0.047, -0.064, 1.086, 1.374, 1.98, -1.462, 0.794, 0.789, -0.146, 0.669, -0.554, 0.755, -0.551, 1.194, 0.741, -0.172, 2.669, 0.682, 0.155]
+                        },
+                        {
+                          "label": "+ position",
+                          "data": [0.877, 0.255, 0.844, -0.509, 0.345, -0.211, -0.704, 0.423, 0.427, 0.369, -1.128, 2.474, 2.028, -1.003, -0.636, -0.001, 0.372, -0.73, -0.105, 0.716, -0.509, 1.52, -0.551, -0.322]
+                        },
+                        {
+                          "label": "= sum",
+                          "data": [1.572, 0.915, 0.754, -0.362, 0.123, -0.258, -0.767, 1.51, 1.8, 2.349, -2.59, 3.267, 2.817, -1.148, 0.033, -0.555, 1.127, -1.281, 1.089, 1.458, -0.682, 4.188, 0.131, -0.167]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "dropemb",
+                  "name": "Dropout",
+                  "sub": "p = 0.1",
+                  "kind": "model",
+                  "type": "op",
+                  "what": "While training, zero a random 10% of the numbers and scale the rest by 1 / 0.9.",
+                  "in": "(2, 256, 768)",
+                  "out": "(2, 256, 768)",
+                  "shape": "(2, 256, 768)",
+                  "size": 393216,
+                  "code": {"key": "GPTModel", "highlight": ["drop_emb"]}
+                }
+              ]
+            },
+            {
+              "id": "blocks",
+              "name": "Transformer block",
+              "sub": "×12 · same shape in and out",
+              "kind": "model",
+              "type": "repeat",
+              "what": "Twelve identical blocks in a row. Each one: attention, then feed-forward, each wrapped in a shortcut.",
+              "in": "(2, 256, 768)",
+              "out": "(2, 256, 768)",
+              "shape": "(2, 256, 768)",
+              "size": 393216,
+              "weights": "85,026,816 (7,085,568 per block)",
+              "code": {"key": "TransformerBlock"},
+              "files": [{"path": "Full_Architecture.ipynb", "note": "Cell 8 · class TransformerBlock"}],
+              "children": [
+                {
+                  "id": "norm1",
+                  "name": "LayerNorm",
+                  "sub": "norm1",
+                  "kind": "model",
+                  "what": "Rescale each token to mean 0 and variance 1 before attention.",
+                  "in": "(2, 256, 768)",
+                  "out": "(2, 256, 768)",
+                  "shape": "(2, 256, 768)",
+                  "size": 393216,
+                  "weights": "1,536",
+                  "code": {"key": "LayerNorm"},
+                  "files": [
+                    {"path": "Full_Architecture.ipynb", "note": "Cell 4 · class LayerNorm"},
+                    {"path": "Untitled.ipynb", "note": "Your LayerNorm experiments"}
+                  ],
+                  "children": [
+                    {
+                      "id": "mean",
+                      "name": "Mean",
+                      "sub": "over 768 numbers",
+                      "kind": "model",
+                      "what": "The average of each token’s 768 numbers.",
+                      "in": "(2, 256, 768)",
+                      "out": "(2, 256, 1)",
+                      "shape": "(2, 256, 1)",
+                      "size": 512,
+                      "code": {"key": "LayerNorm", "highlight": ["x.mean"]},
+                      "values": [
+                        {
+                          "type": "big",
+                          "title": "Block 1, token \" out\"",
+                          "note": "Close to 0 already.",
+                          "value": "0.02"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "var",
+                      "name": "Variance",
+                      "sub": "over 768 numbers",
+                      "kind": "model",
+                      "what": "How spread out each token’s 768 numbers are.",
+                      "in": "(2, 256, 768)",
+                      "out": "(2, 256, 1)",
+                      "shape": "(2, 256, 1)",
+                      "size": 512,
+                      "code": {"key": "LayerNorm", "highlight": ["x.var"]},
+                      "values": [
+                        {
+                          "type": "big",
+                          "title": "Block 1, token \" out\"",
+                          "note": "So the numbers get divided by √1.96 ≈ 1.4.",
+                          "value": "1.96"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "normalize",
+                      "name": "Normalize",
+                      "sub": "(x − mean) / √var",
+                      "kind": "model",
+                      "what": "Subtract the mean and divide by the standard deviation.",
+                      "in": "(2, 256, 768)",
+                      "out": "(2, 256, 768)",
+                      "shape": "(2, 256, 768)",
+                      "size": 393216,
+                      "code": {"key": "LayerNorm", "highlight": ["norm_x ="]},
+                      "values": [
+                        {
+                          "type": "vectors",
+                          "title": "Block 1, token \" out\", first 24 numbers",
+                          "note": "Same pattern, smaller scale.",
+                          "rows": [
+                            {
+                              "label": "before",
+                              "data": [1.572, 0.915, 0.754, -0.362, 0.123, -0.258, -0.767, 1.51, 1.8, 2.349, -2.59, 3.267, 2.817, -1.148, 0.033, -0.555, 1.127, -1.281, 1.089, 1.458, -0.682, 4.188, 0.131, -0.167]
+                            },
+                            {
+                              "label": "after",
+                              "data": [1.107, 0.638, 0.523, -0.273, 0.073, -0.199, -0.562, 1.062, 1.27, 1.661, -1.863, 2.317, 1.995, -0.834, 0.009, -0.411, 0.789, -0.929, 0.762, 1.025, -0.501, 2.974, 0.078, -0.134]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "id": "scaleshift",
+                      "name": "Scale and shift",
+                      "sub": "learned",
+                      "kind": "model",
+                      "type": "op",
+                      "what": "Multiply by scale and add shift. They start at 1 and 0, so nothing changes until training moves them.",
+                      "in": "(2, 256, 768)",
+                      "out": "(2, 256, 768)",
+                      "shape": "(2, 256, 768)",
+                      "size": 393216,
+                      "weights": "1,536",
+                      "code": {"key": "LayerNorm", "highlight": ["nn.Parameter", "self.scale * norm_x"]}
+                    }
+                  ]
+                },
+                {
+                  "id": "attn",
+                  "name": "Multi-head attention",
+                  "sub": "12 heads × 64",
+                  "kind": "model",
+                  "what": "Each token gathers information from itself and the tokens before it.",
+                  "in": "(2, 256, 768)",
+                  "out": "(2, 256, 768)",
+                  "shape": "(2, 256, 768)",
+                  "size": 393216,
+                  "weights": "2,360,064",
+                  "code": {"key": "MultiHeadAttention"},
+                  "files": [
+                    {"path": "Full_Architecture.ipynb", "note": "Cell 3 · class MultiHeadAttention"},
+                    {"path": "attention.ipynb", "note": "Chapter 3 attention, by hand"},
+                    {"path": "practice.ipynb", "note": "Your CausalAttention class"}
+                  ],
+                  "children": [
+                    {
+                      "id": "qkv",
+                      "name": "Project Q, K, V",
+                      "sub": "3 Linear layers",
+                      "kind": "model",
+                      "what": "Make a query, a key and a value vector for every token.",
+                      "in": "(2, 256, 768)",
+                      "out": "(2, 256, 768) ×3",
+                      "shape": "(2, 256, 768) ×3",
+                      "size": 1179648,
+                      "weights": "1,769,472",
+                      "code": {
+                        "key": "MultiHeadAttention",
+                        "highlight": ["= self.W_key(x)", "= self.W_value(x)", "= self.W_query(x)", "nn.Linear(d_in, d_out, bias=qkv_bias)"]
+                      },
+                      "values": [
+                        {
+                          "type": "vectors",
+                          "title": "Query for \" out\", head 1 (first 24 of 64)",
+                          "rows": [
+                            {
+                              "label": "query",
+                              "data": [-0.185, 0.591, -0.701, 0.617, -0.072, -0.751, -0.39, -0.672, -0.132, -0.798, -1.054, 0.129, -0.283, 0.245, -0.786, -0.099, 0.257, 0.029, -0.023, 0.321, 0.608, -0.139, -0.02, 1.058]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "id": "heads",
+                      "name": "Split into heads",
+                      "sub": "view + transpose",
+                      "kind": "model",
+                      "type": "op",
+                      "what": "Cut the 768 numbers into 12 slices of 64, one slice per head.",
+                      "in": "(2, 256, 768) ×3",
+                      "out": "(2, 12, 256, 64) ×3",
+                      "shape": "(2, 12, 256, 64)",
+                      "size": 1179648,
+                      "code": {
+                        "key": "MultiHeadAttention",
+                        "highlight": [".view(b, num_tokens, self.num_heads", "keys.transpose(1, 2)", "queries.transpose(1, 2)", "values.transpose(1, 2)"]
+                      }
+                    },
+                    {
+                      "id": "scores",
+                      "name": "Scores",
+                      "sub": "Q · Kᵀ ÷ √64",
+                      "kind": "model",
+                      "what": "Dot every query with every key.",
+                      "in": "(2, 12, 256, 64)",
+                      "out": "(2, 12, 256, 256)",
+                      "shape": "(2, 12, 256, 256)",
+                      "size": 1572864,
+                      "code": {"key": "MultiHeadAttention", "highlight": ["attn_scores = queries @"]},
+                      "values": [
+                        {
+                          "type": "heatmap",
+                          "title": "Head 1, first 8 tokens (÷ √64)",
+                          "note": "Rows ask, columns answer. Blue is a positive score.",
+                          "labels": ["out", "onto", "the", "sun", "lit", "terr", "ace", "."],
+                          "matrix": [[-0.029, -0.032, -0.302, -0.01, -0.288, -0.473, 0.223, 0.27], [0.572, 0.011, 0.153, 0.466, -0.084, 0.045, 0.247, -0.181], [-0.308, -0.768, 0.463, 0.221, 0.334, -0.018, 0.049, -0.148], [-0.313, 0.223, -0.221, 0.008, 0.626, -0.424, -0.364, 0.358], [-0.208, -0.257, -0.017, 0.919, -0.073, 0.266, 0.067, 0.411], [0.397, 0.434, 0.346, 0.021, -0.477, -0.142, -0.45, -0.607], [0.393, -0.256, 0.104, 0.01, -0.17, 0.201, -0.253, 0.028], [-0.444, -0.172, 0.452, 0.341, 0.077, -0.061, 0.68, -0.179]],
+                          "mode": "div"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mask",
+                      "name": "Causal mask",
+                      "sub": "future → −∞",
+                      "kind": "model",
+                      "what": "Stop every token from seeing the tokens after it.",
+                      "in": "(2, 12, 256, 256)",
+                      "out": "(2, 12, 256, 256)",
+                      "shape": "(2, 12, 256, 256)",
+                      "size": 1572864,
+                      "code": {
+                        "key": "MultiHeadAttention",
+                        "highlight": ["mask_bool", "masked_fill_", "torch.triu"]
+                      },
+                      "values": [
+                        {
+                          "type": "heatmap",
+                          "title": "The same scores, masked",
+                          "note": "Everything above the diagonal becomes −∞.",
+                          "labels": ["out", "onto", "the", "sun", "lit", "terr", "ace", "."],
+                          "matrix": [[-0.029, -0.032, -0.302, -0.01, -0.288, -0.473, 0.223, 0.27], [0.572, 0.011, 0.153, 0.466, -0.084, 0.045, 0.247, -0.181], [-0.308, -0.768, 0.463, 0.221, 0.334, -0.018, 0.049, -0.148], [-0.313, 0.223, -0.221, 0.008, 0.626, -0.424, -0.364, 0.358], [-0.208, -0.257, -0.017, 0.919, -0.073, 0.266, 0.067, 0.411], [0.397, 0.434, 0.346, 0.021, -0.477, -0.142, -0.45, -0.607], [0.393, -0.256, 0.104, 0.01, -0.17, 0.201, -0.253, 0.028], [-0.444, -0.172, 0.452, 0.341, 0.077, -0.061, 0.68, -0.179]],
+                          "mode": "div",
+                          "mask": true
+                        }
+                      ]
+                    },
+                    {
+                      "id": "softmax",
+                      "name": "Softmax",
+                      "sub": "rows sum to 1",
+                      "kind": "model",
+                      "what": "Turn each row of scores into weights that add up to 1.",
+                      "in": "(2, 12, 256, 256)",
+                      "out": "(2, 12, 256, 256)",
+                      "shape": "(2, 12, 256, 256)",
+                      "size": 1572864,
+                      "code": {"key": "MultiHeadAttention", "highlight": ["torch.softmax"]},
+                      "values": [
+                        {
+                          "type": "heatmap",
+                          "title": "Attention weights, head 1",
+                          "note": "−∞ became exactly 0. Untrained, so each row is close to even.",
+                          "labels": ["out", "onto", "the", "sun", "lit", "terr", "ace", "."],
+                          "matrix": [[1, 0, 0, 0, 0, 0, 0, 0], [0.637, 0.363, 0, 0, 0, 0, 0, 0], [0.264, 0.166, 0.57, 0, 0, 0, 0, 0], [0.193, 0.33, 0.211, 0.266, 0, 0, 0, 0], [0.135, 0.129, 0.164, 0.417, 0.155, 0, 0, 0], [0.214, 0.222, 0.203, 0.147, 0.089, 0.125, 0, 0], [0.205, 0.107, 0.154, 0.14, 0.117, 0.169, 0.108, 0], [0.069, 0.091, 0.169, 0.151, 0.116, 0.101, 0.212, 0.09]],
+                          "mode": "seq",
+                          "mask": true
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mix",
+                      "name": "Mix the values",
+                      "sub": "weights × V",
+                      "kind": "model",
+                      "type": "op",
+                      "what": "Each token’s output is a weighted average of the value vectors it can see.",
+                      "in": "(2, 12, 256, 256) and V",
+                      "out": "(2, 12, 256, 64)",
+                      "shape": "(2, 12, 256, 64)",
+                      "size": 393216,
+                      "code": {"key": "MultiHeadAttention", "highlight": ["attn_weights @ values"]}
+                    },
+                    {
+                      "id": "merge",
+                      "name": "Merge heads",
+                      "sub": "+ out_proj",
+                      "kind": "model",
+                      "what": "Glue the 12 heads back together, then mix them with one Linear layer.",
+                      "in": "(2, 12, 256, 64)",
+                      "out": "(2, 256, 768)",
+                      "shape": "(2, 256, 768)",
+                      "size": 393216,
+                      "weights": "590,592",
+                      "code": {
+                        "key": "MultiHeadAttention",
+                        "highlight": ["contiguous().view", "self.out_proj(context_vec)"]
+                      },
+                      "values": [
+                        {
+                          "type": "big",
+                          "title": "Spread of attention’s output",
+                          "note": "Tiny compared with x (1.41). It is an edit that gets added on next.",
+                          "value": "0.06"
+                        }
+                      ]
+                    }
+                  ],
+                  "triggers": [
+                    {"flow": "rnn", "when": "why attention: what a recurrent network forgets"},
+                    {
+                      "flow": "attention",
+                      "when": "how attention.ipynb builds it, from one dot product to causal multi-head attention"
+                    }
+                  ]
+                },
+                {
+                  "id": "sc1",
+                  "name": "Add shortcut",
+                  "sub": "x + attention(x)",
+                  "kind": "model",
+                  "type": "add",
+                  "what": "Add the block’s input back onto attention’s output.",
+                  "in": "(2, 256, 768) ×2",
+                  "out": "(2, 256, 768)",
+                  "shape": "(2, 256, 768)",
+                  "size": 393216,
+                  "code": {"key": "TransformerBlock", "highlight": [20, 24]},
+                  "values": [
+                    {
+                      "type": "bars",
+                      "title": "Spread (std) in block 1",
+                      "note": "x passes through almost unchanged. Attention only nudges it.",
+                      "decimals": 2,
+                      "rows": [
+                        {"label": "x coming in", "value": 1.412},
+                        {"label": "attention adds", "value": 0.062, "faint": true},
+                        {"label": "x going out", "value": 1.414}
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "norm2",
+                  "name": "LayerNorm",
+                  "sub": "norm2 · same 4 steps",
+                  "kind": "model",
+                  "type": "op",
+                  "what": "The same mean, variance, normalize, scale-and-shift, before the feed-forward.",
+                  "in": "(2, 256, 768)",
+                  "out": "(2, 256, 768)",
+                  "shape": "(2, 256, 768)",
+                  "size": 393216,
+                  "weights": "1,536",
+                  "code": {"key": "TransformerBlock", "highlight": [15, 28]}
+                },
+                {
+                  "id": "ff",
+                  "name": "Feed-forward",
+                  "sub": "768 → 3072 → 768",
+                  "kind": "model",
+                  "what": "A small two-layer network, applied to each token on its own.",
+                  "in": "(2, 256, 768)",
+                  "out": "(2, 256, 768)",
+                  "shape": "(2, 256, 768)",
+                  "size": 393216,
+                  "weights": "4,722,432",
+                  "code": {"key": "FeedForward"},
+                  "files": [
+                    {"path": "Full_Architecture.ipynb", "note": "Cell 6 · GELU and FeedForward"},
+                    {"path": "Untitled.ipynb", "note": "Your first GELU and FeedForward"}
+                  ],
+                  "children": [
+                    {
+                      "id": "expand",
+                      "name": "Expand",
+                      "sub": "Linear 768 → 3072",
+                      "kind": "model",
+                      "what": "Map each token to 3,072 numbers.",
+                      "in": "(2, 256, 768)",
+                      "out": "(2, 256, 3072)",
+                      "shape": "(2, 256, 3072)",
+                      "size": 1572864,
+                      "weights": "2,362,368",
+                      "code": {"key": "FeedForward", "highlight": ["# 768 -> 3072"]},
+                      "values": [
+                        {
+                          "type": "vectors",
+                          "title": "Block 1, token \" out\" (first 24 of 3,072)",
+                          "rows": [
+                            {
+                              "label": "expanded",
+                              "data": [-0.771, 0.441, 1.105, 0.127, 0.022, -0.268, -0.286, 0.432, 0.133, -0.312, 0.979, -0.102, -0.021, 0.75, -1.118, 0.879, 0.262, -1.205, 0.433, -0.062, 0.06, -0.924, 0.002, -0.123]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "id": "gelu",
+                      "name": "GELU",
+                      "sub": "the bend",
+                      "kind": "model",
+                      "what": "Keep positive numbers, squash negative ones toward 0.",
+                      "in": "(2, 256, 3072)",
+                      "out": "(2, 256, 3072)",
+                      "shape": "(2, 256, 3072)",
+                      "size": 1572864,
+                      "code": {"key": "GELU", "highlight": ["return 0.5", "torch.sqrt", "0.044715"]},
+                      "values": [
+                        {
+                          "type": "hist2",
+                          "title": "All 3,072 numbers for \" out\"",
+                          "note": "Half the inputs were negative. GELU piles them up just below 0.",
+                          "a": {
+                            "label": "before",
+                            "data": [0, 0, 0, 0, 17, 115, 478, 945, 925, 463, 117, 11, 1, 0, 0, 0]
+                          },
+                          "b": {
+                            "label": "after",
+                            "data": [0, 0, 0, 0, 0, 0, 0, 1555, 1139, 304, 67, 6, 1, 0, 0, 0]
+                          },
+                          "lo": -4,
+                          "hi": 4,
+                          "ticks": [-4, 0, 4]
+                        },
+                        {
+                          "type": "vectors",
+                          "title": "The same first 24 numbers",
+                          "rows": [
+                            {
+                              "label": "before",
+                              "data": [-0.771, 0.441, 1.105, 0.127, 0.022, -0.268, -0.286, 0.432, 0.133, -0.312, 0.979, -0.102, -0.021, 0.75, -1.118, 0.879, 0.262, -1.205, 0.433, -0.062, 0.06, -0.924, 0.002, -0.123]
+                            },
+                            {
+                              "label": "after",
+                              "data": [-0.17, 0.296, 0.956, 0.07, 0.011, -0.106, -0.111, 0.288, 0.074, -0.118, 0.818, -0.047, -0.01, 0.58, -0.148, 0.712, 0.158, -0.138, 0.289, -0.03, 0.032, -0.164, 0.001, -0.056]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "id": "compress",
+                      "name": "Compress",
+                      "sub": "Linear 3072 → 768",
+                      "kind": "model",
+                      "what": "Map back down to 768 numbers per token.",
+                      "in": "(2, 256, 3072)",
+                      "out": "(2, 256, 768)",
+                      "shape": "(2, 256, 768)",
+                      "size": 393216,
+                      "weights": "2,360,064",
+                      "code": {"key": "FeedForward", "highlight": ["#3072 -> 768"]},
+                      "values": [
+                        {
+                          "type": "big",
+                          "title": "Spread of the feed-forward output",
+                          "note": "Another small edit, added to x next.",
+                          "value": "0.20"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "sc2",
+                  "name": "Add shortcut",
+                  "sub": "x + feedforward(x)",
+                  "kind": "model",
+                  "type": "add",
+                  "what": "Add the second half’s input back on.",
+                  "in": "(2, 256, 768) ×2",
+                  "out": "(2, 256, 768)",
+                  "shape": "(2, 256, 768)",
+                  "size": 393216,
+                  "code": {"key": "TransformerBlock", "highlight": [27, 31]},
+                  "values": [
+                    {
+                      "type": "bars",
+                      "title": "Spread (std) as x moves through",
+                      "note": "Each block adds a little on top.",
+                      "decimals": 2,
+                      "rows": [
+                        {"label": "into block 1", "value": 1.412},
+                        {"label": "out of block 1", "value": 1.427},
+                        {"label": "out of block 12", "value": 1.594}
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "fnorm",
+              "name": "Final LayerNorm",
+              "sub": "rescale each token",
+              "kind": "model",
+              "type": "op",
+              "what": "One last LayerNorm before scoring.",
+              "in": "(2, 256, 768)",
+              "out": "(2, 256, 768)",
+              "shape": "(2, 256, 768)",
+              "size": 393216,
+              "weights": "1,536",
+              "code": {"key": "GPTModel", "highlight": ["final_norm"]},
+              "files": [
+                {"path": "Full_Architecture.ipynb", "note": "Cell 10 · final_norm"},
+                {"path": "Full_Architecture.ipynb", "note": "Cell 4 · class LayerNorm"}
+              ],
+              "values": [
+                {
+                  "type": "bars",
+                  "title": "Spread (std)",
+                  "decimals": 2,
+                  "rows": [{"label": "in, after 12 blocks", "value": 1.594}, {"label": "out", "value": 1}]
+                }
+              ]
+            },
+            {
+              "id": "head",
+              "name": "Output head",
+              "sub": "768 → 50,257 scores",
+              "kind": "model",
+              "type": "op",
+              "what": "Score every vocabulary token, at every position.",
+              "in": "(2, 256, 768)",
+              "out": "(2, 256, 50257)",
+              "shape": "(2, 256, 50257)",
+              "size": 25731584,
+              "weights": "38,597,376",
+              "code": {"key": "GPTModel", "highlight": ["out_head"]},
+              "files": [{"path": "Full_Architecture.ipynb", "note": "Cell 10 · out_head"}],
+              "values": [
+                {
+                  "type": "bars",
+                  "title": "Next-token guesses after \" out\"",
+                  "note": "The right answer scores below a uniform guess (0.0020%).",
+                  "unit": "%",
+                  "rows": [
+                    {"label": "\" spont\"", "value": 0.019},
+                    {"label": "\" Boo\"", "value": 0.0154},
+                    {"label": "\"wn\"", "value": 0.015},
+                    {"label": "\"ATOR\"", "value": 0.015},
+                    {"label": "\" onto\" correct", "value": 0.00082, "highlight": true}
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "loss",
+          "name": "Loss",
+          "sub": "cross-entropy",
+          "kind": "learn",
+          "what": "One number for how wrong the 512 predictions were.",
+          "in": "logits (2, 256, 50257) · targets (2, 256)",
+          "out": "one number",
+          "shape": "1 number",
+          "size": 1,
+          "code": {"key": "calc_loss_batch", "highlight": ["cross_entropy"]},
+          "files": [
+            {
+              "path": "Full_Architecture.ipynb",
+              "note": "Cell 11 · calc_loss_batch and calc_loss_loader"
+            }
+          ],
+          "children": [
+            {
+              "id": "flatten",
+              "name": "Flatten",
+              "sub": "512 predictions",
+              "kind": "learn",
+              "type": "op",
+              "what": "Merge batch and position into one list of 512 predictions.",
+              "in": "(2, 256, 50257)",
+              "out": "(512, 50257) · (512,)",
+              "shape": "(512, 50257)",
+              "size": 25731584,
+              "code": {"key": "calc_loss_batch", "highlight": ["flatten"]}
+            },
+            {
+              "id": "logsm",
+              "name": "Log-softmax",
+              "sub": "scores → log-probabilities",
+              "kind": "learn",
+              "what": "Subtract log Σ exp(all scores) from each score.",
+              "in": "(512, 50257)",
+              "out": "(512, 50257)",
+              "shape": "(512, 50257)",
+              "size": 25731584,
+              "code": {"key": "calc_loss_batch", "highlight": ["cross_entropy"]},
+              "values": [
+                {
+                  "type": "kv",
+                  "title": "Position 0, correct token \" onto\"",
+                  "rows": [["Its raw score", "−0.71"], ["log Σ exp(all 50,257 scores)", "10.99"], ["Its log-probability", "−11.70"]]
+                }
+              ]
+            },
+            {
+              "id": "pick",
+              "name": "Pick targets",
+              "sub": "one per position",
+              "kind": "learn",
+              "what": "Keep only the log-probability of the token that actually came next.",
+              "in": "(512, 50257)",
+              "out": "(512,)",
+              "shape": "(512,)",
+              "size": 512,
+              "code": {"key": "calc_loss_batch", "highlight": ["cross_entropy"]},
+              "values": [
+                {
+                  "type": "hist",
+                  "title": "All 512 picked log-probabilities",
+                  "data": [0, 6, 13, 37, 77, 129, 112, 89, 38, 6, 5, 0],
+                  "lo": -13,
+                  "hi": -9,
+                  "mark": -11.01,
+                  "markLabel": "mean −11.01",
+                  "ticks": [-13, -11, -9]
+                }
+              ]
+            },
+            {
+              "id": "negmean",
+              "name": "Average, negate",
+              "sub": "−mean",
+              "kind": "learn",
+              "type": "op",
+              "what": "Turn the 512 log-probabilities into one loss.",
+              "in": "(512,)",
+              "out": "one number",
+              "shape": "1 number",
+              "size": 1,
+              "code": {"key": "calc_loss_batch", "highlight": ["cross_entropy", "return loss"]},
+              "values": [
+                {
+                  "type": "big",
+                  "title": "Loss on this batch",
+                  "note": "A uniform guess over 50,257 tokens would score −ln(1/50,257) = 10.82.",
+                  "value": "11.01"
+                }
+              ]
+            }
+          ],
+          "flags": [
+            {
+              "text": "Cell 16 measures the untrained loss (train 8.84, val 9.12) with model, which cell 17 only creates afterwards. Run in order, cell 16 fails with a NameError; its saved numbers came from an earlier kernel state.",
+              "refs": ["undef:Full_Architecture.ipynb#16:model"]
+            }
+          ]
+        },
+        {
+          "id": "update",
+          "name": "Update weights",
+          "sub": "backward + AdamW",
+          "kind": "learn",
+          "what": "Work out each weight’s share of the blame, then nudge every weight.",
+          "in": "one number",
+          "out": "162M updated weights",
+          "shape": "162M weights",
+          "size": 162419712,
+          "weights": "162,419,712",
+          "code": {
+            "key": "train_model_simple",
+            "highlight": ["zero_grad", "loss.backward", "optimizer.step"]
+          },
+          "files": [
+            {"path": "Full_Architecture.ipynb", "note": "Cell 12 · train_model_simple"},
+            {"path": "Full_Architecture.ipynb", "note": "Cell 17 · AdamW and the 10-epoch run"}
+          ],
+          "children": [
+            {
+              "id": "backward",
+              "name": "Backward",
+              "sub": "chain rule in reverse",
+              "kind": "learn",
+              "what": "Fill .grad on every weight, from the loss back to the embeddings.",
+              "in": "one number",
+              "out": "a .grad for every weight",
+              "shape": "162M grads",
+              "size": 162419712,
+              "code": {"key": "train_model_simple", "highlight": ["loss.backward"]},
+              "values": [
+                {
+                  "type": "ratio",
+                  "title": "Token rows that got a gradient",
+                  "note": "Only tokens that appear in this batch can learn this step.",
+                  "parts": [
+                    {"label": "282 rows", "value": 282, "tone": "good"},
+                    {"label": "50,257 in the table", "value": 49975, "tone": "muted"}
+                  ]
+                },
+                {
+                  "type": "kv",
+                  "title": "Gradient",
+                  "rows": [["Size of all gradients together", "2.28"]]
+                }
+              ]
+            },
+            {
+              "id": "adamw",
+              "name": "AdamW step",
+              "sub": "lr 0.0004 · decay 0.1",
+              "kind": "learn",
+              "what": "Move every weight using a smoothed gradient and its own step size.",
+              "in": "weights + grads",
+              "out": "new weights",
+              "shape": "162M weights",
+              "size": 162419712,
+              "code": {"key": "train_run", "highlight": ["AdamW"]},
+              "children": [
+                {
+                  "id": "decay",
+                  "name": "Weight decay",
+                  "sub": "pull toward 0",
+                  "kind": "learn",
+                  "type": "op",
+                  "what": "Shrink every weight slightly.",
+                  "in": "w",
+                  "out": "w",
+                  "shape": "w",
+                  "size": 162419712,
+                  "code": {"key": "adam_inside", "highlight": ["weight decay"]}
+                },
+                {
+                  "id": "mavg",
+                  "name": "Smoothed gradient",
+                  "sub": "m",
+                  "kind": "learn",
+                  "type": "op",
+                  "what": "A running average of the gradient.",
+                  "in": "g",
+                  "out": "m",
+                  "shape": "m",
+                  "size": 162419712,
+                  "code": {"key": "adam_inside", "highlight": ["smoothed gradient"]}
+                },
+                {
+                  "id": "vavg",
+                  "name": "Smoothed scale",
+                  "sub": "v",
+                  "kind": "learn",
+                  "type": "op",
+                  "what": "A running average of the squared gradient.",
+                  "in": "g",
+                  "out": "v",
+                  "shape": "v",
+                  "size": 162419712,
+                  "code": {"key": "adam_inside", "highlight": ["smoothed scale"]}
+                },
+                {
+                  "id": "move",
+                  "name": "Move the weight",
+                  "sub": "w −= lr · m̂ / √v̂",
+                  "kind": "learn",
+                  "what": "Step each weight by its own scaled amount.",
+                  "in": "w, m, v",
+                  "out": "new w",
+                  "shape": "new w",
+                  "size": 162419712,
+                  "code": {"key": "adam_inside", "highlight": ["bias correction", "v_hat = v", "the step"]},
+                  "values": [
+                    {
+                      "type": "kv",
+                      "title": "One weight: tok_emb[503, 0]",
+                      "note": "Adam’s first step is about lr = 0.0004, whatever the gradient’s size.",
+                      "rows": [["Before", "0.69552"], ["Its gradient", "0.000054"], ["After", "0.69509"]]
+                    },
+                    {
+                      "type": "compare",
+                      "title": "The same batch, before and after this one step",
+                      "rows": [{"label": "before", "value": 11.01}, {"label": "after", "value": 8.59}]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "zero",
+              "name": "Zero gradients",
+              "sub": "start fresh",
+              "kind": "learn",
+              "type": "op",
+              "what": "Reset every .grad so the next batch starts from nothing.",
+              "in": ".grad",
+              "out": ".grad = 0",
+              "shape": "0",
+              "size": 1,
+              "code": {"key": "train_model_simple", "highlight": ["zero_grad"]}
+            }
+          ],
+          "triggers": [
+            {
+              "flow": "evaluate",
+              "when": "every 5 steps (eval_freq = 5), right after the weights move"
+            },
+            {"flow": "sample", "when": "after the last batch of every epoch, every 9 steps"}
+          ]
+        }
+      ],
+      "loops": [{"from": "update", "to": "batch", "label": "next batch · 9 per epoch · 10 epochs"}]
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "what": "Measure train and validation loss without learning from either.",
+      "trigger": "Every 5 training steps (eval_freq = 5), train_model_simple pauses after the weight update to measure train and validation loss: 18 checks over the 90 steps.",
+      "steps": [
+        {
+          "id": "ev-off",
+          "name": "Dropout off",
+          "sub": "model.eval() · no_grad",
+          "kind": "check",
+          "type": "op",
+          "what": "Switch dropout off and stop tracking gradients, so the measurement is fair and cheap.",
+          "in": "the model, mid-training",
+          "out": "the same model, in eval mode",
+          "shape": "eval mode",
+          "code": {"key": "evaluate_model", "highlight": ["model.eval()", "torch.no_grad()"]}
+        },
+        {
+          "id": "ev-train",
+          "name": "Train loss",
+          "sub": "5 of 9 batches",
+          "kind": "learn",
+          "what": "Average the loss over the first 5 training batches (eval_iter = 5).",
+          "in": "train_loader · 9 batches of (2, 256)",
+          "out": "one number",
+          "shape": "train loss",
+          "size": 1,
+          "code": {"key": "evaluate_model", "highlight": ["train_loss = calc_loss_loader(train_loader"]},
+          "children": [
+            {
+              "id": "ev-train-n",
+              "name": "How many batches",
+              "sub": "min(5, 9) = 5",
+              "type": "op",
+              "what": "Use eval_iter batches, or every batch if the loader has fewer.",
+              "in": "eval_iter = 5 · 9 batches",
+              "out": "num_batches = 5",
+              "shape": "5 batches",
+              "code": {
+                "key": "calc_loss_loader",
+                "highlight": ["num_batches = min(num_batches, len(data_loader))"]
+              }
+            },
+            {
+              "id": "ev-train-loss",
+              "name": "Loss per batch",
+              "sub": "×5 · calc_loss_batch",
+              "type": "repeat",
+              "what": "Run the model forward and score it with cross-entropy, as in training, but with no backward pass.",
+              "in": "inputs (2, 256) · targets (2, 256)",
+              "out": "one number per batch",
+              "shape": "5 losses",
+              "size": 5,
+              "code": {
+                "key": "calc_loss_loader",
+                "highlight": ["loss = calc_loss_batch(", "total_loss += loss.item()"]
+              }
+            },
+            {
+              "id": "ev-train-avg",
+              "name": "Average",
+              "sub": "total ÷ 5",
+              "type": "op",
+              "what": "Divide the summed loss by the number of batches used.",
+              "in": "5 losses",
+              "out": "one number",
+              "shape": "1 number",
+              "size": 1,
+              "code": {"key": "calc_loss_loader", "highlight": ["return total_loss / num_batches"]}
+            }
+          ]
+        },
+        {
+          "id": "ev-val",
+          "name": "Validation loss",
+          "sub": "1 batch",
+          "kind": "learn",
+          "what": "The same measurement on the held-out 10%, which the model never trains on.",
+          "in": "val_loader · 1 batch of (2, 256)",
+          "out": "one number",
+          "shape": "val loss",
+          "size": 1,
+          "facts": [["batches used", "min(5, 1) = 1"]],
+          "code": {"key": "evaluate_model", "highlight": ["val_loss = calc_loss_loader(val_loader"]},
+          "flags": [
+            {
+              "text": "eval_iter = 5 asks for 5 batches, but the validation half makes only 2 windows, so every validation loss is the average over one batch of 512 predictions.",
+              "level": "info"
+            }
+          ]
+        },
+        {
+          "id": "ev-on",
+          "name": "Dropout back on",
+          "sub": "model.train()",
+          "kind": "check",
+          "type": "op",
+          "what": "Return to training mode before the next batch.",
+          "in": "train loss · val loss",
+          "out": "both losses, model in train mode",
+          "shape": "2 numbers",
+          "size": 2,
+          "code": {"key": "evaluate_model", "highlight": ["model.train()"]}
+        },
+        {
+          "id": "ev-record",
+          "name": "Record and print",
+          "sub": "one line per check",
+          "kind": "check",
+          "what": "Keep both losses and the number of tokens seen so far, and print one progress line.",
+          "in": "train loss · val loss",
+          "out": "3 lists of 18 · 18 printed lines",
+          "shape": "18 checks",
+          "code": {
+            "key": "train_model_simple",
+            "highlight": ["train_losses.append(train_loss)", "val_losses.append(val_loss)", "track_tokens_seen.append(tokens_seen)", "print(f\"Ep {epoch+1}"]
+          },
+          "values": [
+            {
+              "type": "quote",
+              "title": "The first check, step 0",
+              "text": "Ep 1 (Step 000000): Train loss 9.818, Val loss 9.923",
+              "ref": "out:Full_Architecture.ipynb#17"
+            },
+            {
+              "type": "bars",
+              "title": "Train loss, every third check",
+              "note": "From cell 17’s saved output, the notebook’s own 10-epoch run.",
+              "decimals": 2,
+              "rows": [
+                {"label": "step 0", "value": 9.818},
+                {"label": "step 15", "value": 6.046},
+                {"label": "step 30", "value": 5.007},
+                {"label": "step 45", "value": 3.717},
+                {"label": "step 60", "value": 2.379},
+                {"label": "step 75", "value": 1.238},
+                {"label": "step 85, the last", "value": 0.712, "highlight": true}
+              ],
+              "ref": "out:Full_Architecture.ipynb#17"
+            },
+            {
+              "type": "bars",
+              "title": "Validation loss at the same checks",
+              "note": "Lowest at step 60 (6.132), then rising while train loss keeps falling: the model is memorising the story.",
+              "decimals": 2,
+              "rows": [
+                {"label": "step 0", "value": 9.923},
+                {"label": "step 15", "value": 6.597},
+                {"label": "step 30", "value": 6.297},
+                {"label": "step 45", "value": 6.133},
+                {"label": "step 60", "value": 6.132, "highlight": true},
+                {"label": "step 75", "value": 6.253},
+                {"label": "step 85, the last", "value": 6.38}
+              ],
+              "ref": "out:Full_Architecture.ipynb#17"
+            },
+            {
+              "type": "kv",
+              "title": "Over the whole run",
+              "rows": [["Checks", "18, at steps 0, 5, …, 85"], ["Training steps", "90 (9 batches × 10 epochs)"], ["Tokens seen at the last check", "44,032 (86 steps × 512)"]]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sample",
+      "name": "Sample text",
+      "what": "Let the model write 50 tokens after a fixed prompt, to see what it has learned so far.",
+      "trigger": "At the end of every epoch (every 9 steps), train_model_simple prints what the model writes after “Hi, my name is”.",
+      "steps": [
+        {
+          "id": "sm-off",
+          "name": "Dropout off",
+          "sub": "model.eval()",
+          "kind": "check",
+          "type": "op",
+          "what": "Switch dropout off, so the sample shows the model itself and not random noise.",
+          "in": "the model, at the end of an epoch",
+          "out": "the same model, in eval mode",
+          "shape": "eval mode",
+          "code": {"key": "generate_and_print_sample", "highlight": ["model.eval()"]}
+        },
+        {
+          "id": "sm-encode",
+          "name": "Encode the prompt",
+          "sub": "“Hi, my name is”",
+          "kind": "data",
+          "what": "Turn the start context into token IDs.",
+          "in": "“Hi, my name is”",
+          "out": "5 token IDs",
+          "shape": "5 IDs",
+          "size": 5,
+          "code": {
+            "key": "generate_and_print_sample",
+            "highlight": ["text_to_token_ids(start_context, tokenizer)"]
+          },
+          "values": [
+            {
+              "type": "chips",
+              "title": "The prompt as GPT-2 tokens",
+              "note": "Measured with tiktoken’s gpt2 encoding, the one create_dataloader_v1 loads.",
+              "rows": [
+                {
+                  "label": "id",
+                  "items": [["17250", "Hi"], ["11", ","], ["616", " my"], ["1438", " name"], ["318", " is"]]
+                }
+              ]
+            }
+          ],
+          "flags": [
+            {
+              "text": "text_to_token_ids is called here but defined in no notebook in the repo.",
+              "refs": ["undef:.#text_to_token_ids"]
+            }
+          ]
+        },
+        {
+          "id": "sm-generate",
+          "name": "Generate 50 tokens",
+          "sub": "×50 · generate_text_simple",
+          "kind": "model",
+          "type": "repeat",
+          "what": "Predict one token, append it, and repeat 50 times.",
+          "in": "5 IDs",
+          "out": "55 IDs",
+          "shape": "55 IDs",
+          "size": 55,
+          "facts": [["max_new_tokens", "50", "generate_and_print_sample"], ["context_size", "256, the rows of pos_emb"]],
+          "code": {
+            "key": "generate_and_print_sample",
+            "highlight": ["generate_text_simple(", "max_new_tokens=50", "context_size = model.pos_emb.weight.shape[0]"]
+          },
+          "flags": [
+            {
+              "text": "generate_text_simple is called here but defined in no notebook in the repo, so in a fresh kernel this step fails with a NameError. Cell 17’s saved samples came from a kernel where it existed. The four steps inside are what the call has to do; the repo has no code for them.",
+              "refs": ["undef:.#generate_text_simple"]
+            }
+          ],
+          "children": [
+            {
+              "id": "sm-forward",
+              "name": "Forward pass",
+              "sub": "GPTModel",
+              "type": "op",
+              "what": "Run the model on the sequence so far. It takes at most 256 tokens, since the position table has 256 rows.",
+              "in": "the n IDs so far",
+              "out": "50,257 scores at each of n positions",
+              "shape": "n × 50,257",
+              "code": {"key": "GPTModel", "highlight": ["logits = self.out_head(x)"]}
+            },
+            {
+              "id": "sm-last",
+              "name": "Last position",
+              "sub": "the next-token guess",
+              "type": "op",
+              "what": "Only the scores at the final position predict the token that comes next.",
+              "in": "n × 50,257 scores",
+              "out": "50,257 scores",
+              "shape": "50,257 scores",
+              "size": 50257
+            },
+            {
+              "id": "sm-pick",
+              "name": "Pick the next token",
+              "sub": "1 of 50,257",
+              "type": "op",
+              "what": "Choose one token ID from the 50,257 scores.",
+              "in": "50,257 scores",
+              "out": "1 token ID",
+              "shape": "1 ID",
+              "size": 1,
+              "flags": [
+                {
+                  "text": "How the token is chosen can’t be read here, since generate_text_simple isn’t in the repo. The early samples repeat themselves (“and, and, and”), which is typical of always taking the top score.",
+                  "level": "info"
+                }
+              ]
+            },
+            {
+              "id": "sm-append",
+              "name": "Append",
+              "sub": "n → n + 1",
+              "type": "op",
+              "what": "Add the chosen ID to the end of the sequence, which becomes the next input.",
+              "in": "n IDs + 1 ID",
+              "out": "n + 1 IDs",
+              "shape": "n + 1 IDs"
+            }
+          ]
+        },
+        {
+          "id": "sm-decode",
+          "name": "Decode and print",
+          "sub": "token_ids_to_text",
+          "kind": "data",
+          "what": "Turn the 55 IDs back into text, flatten line breaks to spaces, and print it.",
+          "in": "55 IDs",
+          "out": "one printed line",
+          "shape": "1 line",
+          "code": {"key": "generate_and_print_sample", "highlight": ["print(token_ids_to_text("]},
+          "flags": [
+            {
+              "text": "token_ids_to_text is called here but defined in no notebook in the repo.",
+              "refs": ["undef:.#token_ids_to_text"]
+            }
+          ],
+          "values": [
+            {
+              "type": "quote",
+              "title": "After epoch 1",
+              "note": "The rest of the line prints as blank space.",
+              "text": "Hi, my name is.",
+              "ref": "out:Full_Architecture.ipynb#17"
+            },
+            {
+              "type": "quote",
+              "title": "After epoch 3",
+              "text": "Hi, my name is to to the of the of the to the, and, and. G, and, and, and, and, and, and, and, …",
+              "ref": "out:Full_Architecture.ipynb#17"
+            },
+            {
+              "type": "quote",
+              "title": "After epoch 10, the last",
+              "note": "From cell 17’s saved output, the notebook’s own 10-epoch run. Whole phrases of the-verdict.txt: the model has memorised the story.",
+              "text": "Hi, my name is the inevitable garlanded frame. Gisburn--as such--had not existed till nearly a year after Jack's resolve had been taken. It might be that he had married her--the quality of Jack's \"There were days when I couldn",
+              "ref": "out:Full_Architecture.ipynb#17"
+            }
+          ]
+        },
+        {
+          "id": "sm-on",
+          "name": "Dropout back on",
+          "sub": "model.train()",
+          "kind": "check",
+          "type": "op",
+          "what": "Return to training mode for the next epoch.",
+          "in": "the model, in eval mode",
+          "out": "the model, in train mode",
+          "shape": "train mode",
+          "code": {"key": "generate_and_print_sample", "highlight": ["model.train()"]}
+        }
+      ]
+    },
+    {
+      "id": "rnn",
+      "name": "Before attention: RNN",
+      "study": true,
+      "what": "How rnn.ipynb squeezes a whole sentence through one hidden vector, and why the first words fade: the problem attention solves.",
+      "trigger": "Explains why the attention station exists: rnn.ipynb reads the story one word at a time into a single 4-number memory, and shows that memory forgetting the start of a long passage.",
+      "steps": [
+        {
+          "id": "rn-embed",
+          "name": "Embed three words",
+          "sub": "Embedding(50257, 3)",
+          "kind": "byhand",
+          "what": "Take three tokens of the story and look each up in a small random embedding table, so every word becomes 3 numbers.",
+          "in": "IDs for ' always', ' thought', ' Jack'",
+          "out": "(3, 3) word vectors",
+          "shape": "(3, 3)",
+          "size": 9,
+          "code": {"key": "rnn_embed", "highlight": ["embedding = torch.nn.Embedding(50257, 3)"]},
+          "refs": ["rnn_ids"],
+          "values": [
+            {
+              "type": "kv",
+              "title": "The three words (cell 1)",
+              "ref": "out:rnn.ipynb#1",
+              "rows": [["word 1", "always"], ["word 2", "thought"], ["word 3", "Jack"]]
+            },
+            {
+              "type": "vectors",
+              "title": "Their embeddings (cell 3)",
+              "ref": "out:rnn.ipynb#3",
+              "note": "Random at the start: training would move these.",
+              "rows": [
+                {"label": "always", "data": [-0.266, -1.2898, -0.3104]},
+                {"label": "thought", "data": [1.41, 0.8201, 0.0837]},
+                {"label": "Jack", "data": [1.6249, 2.9188, 0.0243]}
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rn-weights",
+          "name": "Two weight matrices",
+          "sub": "W_x · W_h",
+          "kind": "byhand",
+          "type": "op",
+          "what": "W_x turns a 3-number word into 4 numbers; W_h mixes the previous 4-number memory into the next one. The same two matrices are reused at every word.",
+          "in": "nothing (random)",
+          "out": "W_x (4, 3), W_h (4, 4)",
+          "shape": "W_x, W_h",
+          "size": 28,
+          "facts": [["W_x", "(4,3)", "rnn_weights"], ["W_h scale", "0.5", "rnn_weights"]],
+          "code": {"key": "rnn_weights", "highlight": ["W_h = torch.randn(4,4) * 0.5"]}
+        },
+        {
+          "id": "rn-step",
+          "name": "Read word by word",
+          "sub": "h = tanh(W_x x + W_h h)",
+          "kind": "byhand",
+          "type": "repeat",
+          "what": "Start with a blank memory h, then for each word combine the new word with the old memory and overwrite h. Everything the model knows about earlier words must survive inside these 4 numbers.",
+          "in": "(3, 3) word vectors, h = zeros(4)",
+          "out": "h after each word, 4 numbers",
+          "shape": "h (4,)",
+          "size": 4,
+          "code": {"key": "rnn_loop", "highlight": ["h = torch.tanh(W_x @ x + W_h @ h)"]},
+          "values": [
+            {
+              "type": "vectors",
+              "title": "h after each word (cell 5)",
+              "ref": "out:rnn.ipynb#5",
+              "note": "Each row replaces the one above: there is only ever one h.",
+              "rows": [
+                {"label": "always", "data": [-0.5675, 0.8702, -0.0696, 0.9145]},
+                {"label": "thought", "data": [-0.3204, -0.9948, 1.0, -0.5685]},
+                {"label": "Jack", "data": [0.9951, -0.9999, 0.5891, -0.9981]}
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rn-final",
+          "name": "One vector for all",
+          "sub": "def rnn",
+          "kind": "module",
+          "type": "op",
+          "what": "Wrap the loop in a function: any number of words in, one final 4-number h out. That one vector is all a next step could see of the sentence.",
+          "in": "a list of token IDs",
+          "out": "final h, 4 numbers",
+          "shape": "h (4,)",
+          "size": 4,
+          "code": {"key": "rnn", "highlight": ["return h"]},
+          "values": [
+            {
+              "type": "vectors",
+              "title": "rnn(ids) for the three words (cell 7)",
+              "ref": "out:rnn.ipynb#7",
+              "rows": [{"label": "h", "data": [0.9971, 0.1653, 0.9957, 0.3751]}]
+            }
+          ]
+        },
+        {
+          "id": "rn-forget",
+          "name": "The start fades",
+          "sub": "swap in ' banana'",
+          "kind": "byhand",
+          "what": "Replace either the first or the last word with ' banana' and measure how much the final h moves. The longer the passage, the less the first word matters, until at 50 words it doesn't change h at all. Attention fixes this: every token looks straight back at every earlier token instead of through one squashed memory.",
+          "in": "3, 10 and 50 tokens from ' always'",
+          "out": "how far h moves",
+          "shape": "distances",
+          "size": 6,
+          "code": {"key": "rnn_swap", "highlight": ["first = rnn([swap] + s[1:])"]},
+          "triggers": [
+            {
+              "flow": "attention",
+              "when": "what replaces the single memory: every token attends to every earlier one"
+            }
+          ],
+          "values": [
+            {
+              "type": "bars",
+              "title": "Change in final h when one word is swapped (cell 8)",
+              "ref": "out:rnn.ipynb#8",
+              "decimals": 3,
+              "note": "Sum of absolute differences. At 50 tokens the first word has no effect left.",
+              "rows": [
+                {"label": "3 tokens · first word", "value": 1.685612678527832},
+                {"label": "3 tokens · last word", "value": 1.588960886001587, "faint": true},
+                {"label": "10 tokens · first word", "value": 0.0334036648273468},
+                {"label": "10 tokens · last word", "value": 3.933704376220703, "faint": true},
+                {"label": "50 tokens · first word", "value": 0.0, "highlight": true},
+                {"label": "50 tokens · last word", "value": 5.293532371520996, "faint": true}
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "attention",
+      "name": "Attention",
+      "study": true,
+      "what": "How attention.ipynb builds self-attention by hand, one idea at a time, up to the causal multi-head attention inside every transformer block.",
+      "trigger": "Opens the attention inside every transformer block: attention.ipynb builds it on six 3-number embeddings, “Your journey starts with one step”, from one dot product to causal multi-head attention.",
+      "steps": [
+        {
+          "id": "at-simple",
+          "name": "Simple self-attention",
+          "sub": "no weights yet",
+          "kind": "byhand",
+          "what": "Score every token against every other with a dot product, turn the scores into weights, and mix the tokens by those weights.",
+          "in": "6 tokens × 3 numbers",
+          "out": "6 context vectors × 3",
+          "shape": "(6, 3)",
+          "size": 18,
+          "code": {"key": "attn_context_simple"},
+          "children": [
+            {
+              "id": "at-s-scores",
+              "name": "Dot-product scores",
+              "sub": "x · xᵀ",
+              "what": "How far each token points the same way as every other.",
+              "in": "(6, 3)",
+              "out": "(6, 6) scores",
+              "shape": "(6, 6)",
+              "size": 36,
+              "code": {"key": "attn_scores_all", "highlight": ["inputs @ inputs.T"]},
+              "values": [
+                {
+                  "type": "bars",
+                  "title": "Scores for the query “journey”",
+                  "decimals": 2,
+                  "note": "Highest against itself, then “starts”, whose embedding is almost the same.",
+                  "rows": [
+                    {"label": "Your", "value": 0.9544, "highlight": false},
+                    {"label": "journey", "value": 1.495, "highlight": true},
+                    {"label": "starts", "value": 1.4754, "highlight": false},
+                    {"label": "with", "value": 0.8434, "highlight": false},
+                    {"label": "one", "value": 0.707, "highlight": false},
+                    {"label": "step", "value": 1.0865, "highlight": false}
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "at-s-softmax",
+              "name": "Softmax",
+              "sub": "rows sum to 1",
+              "what": "Turn each row of scores into weights that add up to 1.",
+              "in": "(6, 6) scores",
+              "out": "(6, 6) weights",
+              "shape": "(6, 6)",
+              "size": 36,
+              "code": {"key": "attn_weights_simple", "highlight": ["torch.softmax(attn_scores, dim=1)"]},
+              "values": [
+                {
+                  "type": "heatmap",
+                  "title": "The six rows of weights",
+                  "mode": "seq",
+                  "labels": ["Your", "journey", "starts", "with", "one", "step"],
+                  "note": "A 2-D tensor, so dim=1 is the row. The batched class later keeps dim=1, and there it is wrong.",
+                  "matrix": [[0.2098, 0.2006, 0.1981, 0.1242, 0.122, 0.1452], [0.1385, 0.2379, 0.2333, 0.124, 0.1082, 0.1581], [0.139, 0.2369, 0.2326, 0.1242, 0.1108, 0.1565], [0.1435, 0.2074, 0.2046, 0.1462, 0.1263, 0.172], [0.1526, 0.1958, 0.1975, 0.1367, 0.1879, 0.1295], [0.1385, 0.2184, 0.2128, 0.142, 0.0988, 0.1896]]
+                }
+              ]
+            },
+            {
+              "id": "at-s-mix",
+              "name": "Weighted sum",
+              "sub": "weights @ x",
+              "type": "op",
+              "what": "Each token’s context vector is every embedding, weighted by that token’s row.",
+              "in": "(6, 6) weights · (6, 3)",
+              "out": "(6, 3) context vectors",
+              "shape": "(6, 3)",
+              "size": 18,
+              "code": {"key": "attn_context_simple", "highlight": ["attn_weights @ inputs"]},
+              "values": [
+                {
+                  "type": "kv",
+                  "title": "“journey”, before and after",
+                  "rows": [["Its embedding", "[0.55, 0.87, 0.66]"], ["Its context vector", "[0.44, 0.65, 0.57]"]]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "at-trainable",
+          "name": "Trainable weights",
+          "sub": "query · key · value",
+          "kind": "byhand",
+          "what": "Give attention three learned matrices, so a token can ask (query), advertise (key) and hand over (value) different things.",
+          "in": "(6, 3)",
+          "out": "(6, 2) context vectors",
+          "shape": "(6, 2)",
+          "size": 12,
+          "code": {"key": "SelfAttention_v1"},
+          "children": [
+            {
+              "id": "at-t-proj",
+              "name": "Project Q, K, V",
+              "sub": "3 random 3 × 2 matrices",
+              "what": "Multiply the embeddings by three random matrices (seed 123) to get queries, keys and values.",
+              "in": "(6, 3)",
+              "out": "(6, 2) ×3",
+              "shape": "(6, 2) ×3",
+              "size": 36,
+              "code": {
+                "key": "attn_qkv_params",
+                "highlight": ["W_query = torch.nn.Parameter(torch.rand(d_in, d_out))"]
+              },
+              "values": [
+                {
+                  "type": "kv",
+                  "title": "“journey”, projected",
+                  "rows": [["Query (cell 13)", "[0.4306, 1.4551]", "out:attention.ipynb#13"], ["Value (cell 15)", "[0.3951, 1.0037]", "out:attention.ipynb#15"]]
+                }
+              ]
+            },
+            {
+              "id": "at-t-scores",
+              "name": "Scores",
+              "sub": "query · every key",
+              "what": "Dot the query of “journey” with the key of every token.",
+              "in": "(2,) query · (6, 2) keys",
+              "out": "6 scores",
+              "shape": "(6,)",
+              "size": 6,
+              "code": {"key": "attn_scores_query2", "highlight": ["attn_scores_2 = query_2 @ keys.T"]},
+              "values": [
+                {
+                  "type": "bars",
+                  "title": "Scores for the query “journey”",
+                  "decimals": 2,
+                  "rows": [
+                    {"label": "Your", "value": 1.2705, "highlight": false},
+                    {"label": "journey", "value": 1.8524, "highlight": true},
+                    {"label": "starts", "value": 1.8111, "highlight": false},
+                    {"label": "with", "value": 1.0795, "highlight": false},
+                    {"label": "one", "value": 0.5577, "highlight": false},
+                    {"label": "step", "value": 1.544, "highlight": false}
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "at-t-scale",
+              "name": "Scale and softmax",
+              "sub": "÷ √2, the key size",
+              "what": "Divide by the square root of the key size before softmax, so bigger keys don’t make the weights spike.",
+              "in": "6 scores",
+              "out": "6 weights summing to 1",
+              "shape": "(6,)",
+              "size": 6,
+              "code": {
+                "key": "attn_scaled_softmax",
+                "highlight": ["torch.softmax(attn_scores_2 / d_k**0.5, dim=0)"]
+              },
+              "values": [
+                {
+                  "type": "bars",
+                  "title": "Weights for “journey”",
+                  "decimals": 2,
+                  "rows": [
+                    {"label": "Your", "value": 0.15, "highlight": false},
+                    {"label": "journey", "value": 0.2264, "highlight": true},
+                    {"label": "starts", "value": 0.2199, "highlight": false},
+                    {"label": "with", "value": 0.1311, "highlight": false},
+                    {"label": "one", "value": 0.0906, "highlight": false},
+                    {"label": "step", "value": 0.182, "highlight": false}
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "at-t-mix",
+              "name": "Context vector",
+              "sub": "weights @ values",
+              "type": "op",
+              "what": "Mix the value vectors by the weights.",
+              "in": "6 weights · (6, 2) values",
+              "out": "one (2,) context vector",
+              "shape": "(2,)",
+              "size": 2,
+              "code": {
+                "key": "attn_context_trainable",
+                "highlight": ["context_vec_2 = attn_weights @ values"]
+              },
+              "flags": [
+                {
+                  "text": "Cell 20 multiplies attn_weights, the 6 × 6 weights left over from the first section, not attn_weights_2. It prints six rows built from the wrong weights instead of the context vector for “journey”, which cell 22’s class gets right: [0.3061, 0.8210]."
+                }
+              ]
+            },
+            {
+              "id": "at-t-class",
+              "name": "Wrap in a class",
+              "sub": "SelfAttention_v1 and v2",
+              "kind": "module",
+              "what": "Package the four steps as an nn.Module: v1 holds raw Parameters, v2 uses nn.Linear layers, which start from different random weights.",
+              "in": "(6, 3)",
+              "out": "(6, 2)",
+              "shape": "(6, 2)",
+              "size": 12,
+              "code": {
+                "key": "SelfAttention_v1",
+                "highlight": ["keys = inputs @ self.W_keys", "attn_scores / d_k**0.5"]
+              },
+              "flags": [
+                {
+                  "text": "forward(self, x) never uses x: both classes read the notebook’s global inputs and d_k, so calling them on any other tensor still attends over the six example tokens."
+                },
+                {
+                  "text": "Cell 23 defines SelfAttention_v2 but then runs v1 again, so its output repeats cell 22’s. v2 first runs in cell 24.",
+                  "level": "info"
+                }
+              ],
+              "values": [
+                {
+                  "type": "kv",
+                  "title": "Row 2, “journey”",
+                  "rows": [["SelfAttention_v1", "[0.3061, 0.8210]", "out:attention.ipynb#22"], ["SelfAttention_v2", "[−0.5323, −0.1080]", "out:attention.ipynb#24"]]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "at-causal",
+          "name": "Causal mask",
+          "sub": "hide the future",
+          "kind": "byhand",
+          "what": "Let a token look only at itself and the tokens before it, so the model can’t peek at the word it has to predict.",
+          "in": "(6, 6) weights",
+          "out": "(6, 6) weights, zero above the diagonal",
+          "shape": "(6, 6)",
+          "size": 36,
+          "code": {"key": "attn_mask_inf"},
+          "alternatives": true,
+          "children": [
+            {
+              "id": "at-c-renorm",
+              "name": "Zero, then renormalise",
+              "sub": "tril · ÷ row sum",
+              "type": "op",
+              "what": "Multiply the weights by a lower-triangular mask of ones, then divide each row by its new sum.",
+              "in": "(6, 6) weights",
+              "out": "(6, 6), rows summing to 1",
+              "shape": "(6, 6)",
+              "code": {
+                "key": "attn_mask_renorm",
+                "highlight": ["masked_simple_norm = masked_simple / row_sums"]
+              }
+            },
+            {
+              "id": "at-c-inf",
+              "name": "−∞ before softmax",
+              "sub": "triu · masked_fill",
+              "type": "op",
+              "what": "Set the future scores to −∞ instead. Softmax turns them into exact zeros, and the rows already sum to 1.",
+              "in": "(6, 6) scores",
+              "out": "(6, 6) weights",
+              "shape": "(6, 6)",
+              "code": {
+                "key": "attn_mask_inf",
+                "highlight": ["masked = attn_scores.masked_fill(mask.bool(), -torch.inf)"]
+              },
+              "values": [
+                {
+                  "type": "heatmap",
+                  "title": "Masked weights (cell 33)",
+                  "mode": "seq",
+                  "labels": ["Your", "journey", "starts", "with", "one", "step"],
+                  "mask": true,
+                  "note": "Exactly the weights that zeroing and renormalising gives (cell 31), in one step.",
+                  "matrix": [[1.0, 0, 0, 0, 0, 0], [0.4833, 0.5167, 0, 0, 0, 0], [0.319, 0.3408, 0.3402, 0, 0, 0], [0.2445, 0.2545, 0.2542, 0.2468, 0, 0], [0.1994, 0.206, 0.2058, 0.1935, 0.1953, 0], [0.1624, 0.1709, 0.1706, 0.1654, 0.1625, 0.1682]],
+                  "ref": "out:attention.ipynb#33"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "at-dropout",
+          "name": "Dropout on the weights",
+          "sub": "p = 0.5 here, 0.1 in GPT",
+          "kind": "byhand",
+          "type": "op",
+          "what": "While training, zero some attention weights at random and scale the rest up, so the model can’t lean on any one token.",
+          "in": "(6, 6) weights",
+          "out": "(6, 6), some zeroed, the rest doubled",
+          "shape": "(6, 6)",
+          "size": 36,
+          "code": {"key": "attn_dropout", "highlight": ["nn.Dropout(0.5)"]},
+          "values": [
+            {
+              "type": "ratio",
+              "title": "Dropout(0.5) on a 6 × 6 of ones (seed 123, cell 36)",
+              "note": "Each kept cell becomes 2.0, so the expected total stays the same.",
+              "parts": [
+                {"label": "21 kept, now 2.0", "value": 21, "tone": "pos"},
+                {"label": "15 zeroed", "value": 15, "tone": "muted"}
+              ]
+            }
+          ]
+        },
+        {
+          "id": "at-causal-class",
+          "name": "Causal attention class",
+          "sub": "CausalAttention · batched",
+          "kind": "module",
+          "what": "The same steps as one module that takes a batch, with the mask kept as a buffer so it moves with the model.",
+          "in": "(2, 6, 3) batch",
+          "out": "(2, 6, 2)",
+          "shape": "(2, 6, 2)",
+          "size": 24,
+          "code": {
+            "key": "CausalAttention",
+            "highlight": ["attn_weights = torch.softmax(attn_scores / keys.shape[-1]**0.5, dim=1)", "self.register_buffer"]
+          },
+          "flags": [
+            {
+              "text": "Softmax runs over dim=1, which in a batched (batch, tokens, tokens) tensor is the query axis, not the keys: each column sums to 1 instead of each row. dim=1 was right in cell 33 only because that tensor was 2-D. Full_Architecture’s MultiHeadAttention uses dim=-1, as it should."
+            }
+          ],
+          "values": [
+            {
+              "type": "bars",
+              "title": "Row sums of the weights, first sequence (seed 789)",
+              "decimals": 2,
+              "note": "Re-running cell 39’s class as written: the rows should each sum to 1. With dim=-1 they do.",
+              "rows": [
+                {"label": "Your", "value": 0.1605},
+                {"label": "journey", "value": 0.3875},
+                {"label": "starts", "value": 0.6453},
+                {"label": "with", "value": 0.9332},
+                {"label": "one", "value": 1.4143},
+                {"label": "step", "value": 2.4591}
+              ]
+            },
+            {
+              "type": "kv",
+              "title": "Context vector of “Your”, the first token",
+              "note": "As written it matches cell 39’s saved output. With dim=-1, “Your” attends only to itself, so for the second sequence (the inputs × 3) it is exactly 3 times the first.",
+              "rows": [["As written, sequence 1", "[−0.0140, 0.0046]", "out:attention.ipynb#39"], ["As written, sequence 2", "[−0.0265, 0.0087]"], ["dim=-1, sequence 1", "[−0.0872, 0.0286]"], ["dim=-1, sequence 2", "[−0.2617, 0.0858]"]]
+            }
+          ]
+        },
+        {
+          "id": "at-multi",
+          "name": "Multi-head attention",
+          "sub": "2 heads in the example",
+          "kind": "module",
+          "what": "Run several attention heads side by side and join their outputs, so each head can follow a different relationship.",
+          "in": "(2, 6, 3) batch",
+          "out": "(2, 6, d_out)",
+          "shape": "(2, 6, d_out)",
+          "code": {"key": "attention.ipynb#MultiHeadAttention"},
+          "alternatives": true,
+          "children": [
+            {
+              "id": "at-m-wrap",
+              "name": "Stack separate heads",
+              "sub": "MultiHeadAttentionWrapper",
+              "type": "op",
+              "what": "Make num_heads CausalAttention modules and join their outputs along the last axis.",
+              "in": "(2, 6, 3)",
+              "out": "(2, 6, 4) for 2 heads of 2",
+              "shape": "(2, 6, 4)",
+              "size": 48,
+              "code": {
+                "key": "MultiHeadAttentionWrapper",
+                "highlight": ["torch.cat([head(x) for head in self.heads], dim=-1)"]
+              },
+              "flags": [
+                {
+                  "text": "Built from CausalAttention, so it inherits the dim=1 softmax.",
+                  "level": "info"
+                }
+              ]
+            },
+            {
+              "id": "at-m-split",
+              "name": "Split one projection",
+              "sub": "view + transpose",
+              "type": "op",
+              "what": "Project once, then cut the result into heads with view and transpose. This is the version Full_Architecture copies into the GPT.",
+              "in": "(2, 6, 3)",
+              "out": "(2, 6, 2) for 2 heads of 1",
+              "shape": "(2, 6, 2)",
+              "size": 24,
+              "code": {
+                "key": "attention.ipynb#MultiHeadAttention",
+                "highlight": ["keys = keys.view(b, num_tokens, self.num_heads, self.head_dim)", "attn_weights = torch.softmax(attn_scores / keys.shape[-1]**0.5, dim=-1)"]
+              },
+              "flags": [
+                {"text": "This cell has no saved output, so it hasn’t been run.", "level": "info"},
+                {
+                  "text": "Here out_proj is nn.Linear(d_out, d_out). Full_Architecture’s copy writes nn.Linear(d_in, d_out), which only works because d_in and d_out are both 768 there.",
+                  "level": "info"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tokenizer",
+      "name": "Tokenizer",
+      "study": true,
+      "what": "How tokenizer.ipynb turns text into IDs: a word-level tokenizer built by hand, then GPT-2’s byte-pair encoding.",
+      "trigger": "Opens the Tokenize station: tokenizer.ipynb builds a tokenizer by hand on the same story, then switches to GPT-2’s byte-pair encoding, the one training uses.",
+      "steps": [
+        {
+          "id": "tk-load",
+          "name": "Load the story",
+          "sub": "the-verdict.txt",
+          "kind": "byhand",
+          "what": "Download the short story once, then read it as one string.",
+          "in": "a URL on GitHub",
+          "out": "20,479 characters",
+          "shape": "20,479 chars",
+          "size": 20479,
+          "code": {"key": "tok_download", "highlight": ["urllib.request.urlretrieve(url, file_path)"]}
+        },
+        {
+          "id": "tk-split",
+          "name": "Split into pieces",
+          "sub": "regex · punctuation, spaces",
+          "kind": "byhand",
+          "what": "Cut at spaces, punctuation and double dashes, keep each punctuation mark as a piece of its own, and drop the empty strings.",
+          "in": "20,479 chars",
+          "out": "4,690 pieces",
+          "shape": "4,690 pieces",
+          "size": 4690,
+          "code": {"key": "tok_split", "highlight": ["re.split(", "preprocessed = [item.strip()"]},
+          "values": [
+            {
+              "type": "chips",
+              "title": "The first 10 pieces (cell 3)",
+              "rows": [
+                {
+                  "label": "piece",
+                  "items": [["I"], ["HAD"], ["always"], ["thought"], ["Jack"], ["Gisburn"], ["rather"], ["a"], ["cheap"], ["genius"]]
+                }
+              ],
+              "ref": "out:tokenizer.ipynb#3"
+            },
+            {
+              "type": "big",
+              "title": "Pieces in the whole story",
+              "value": "4,690",
+              "note": "Counted by re-running cell 3’s split; the notebook prints only the first 10."
+            }
+          ]
+        },
+        {
+          "id": "tk-vocab",
+          "name": "Build the vocabulary",
+          "sub": "sorted · one ID each",
+          "kind": "byhand",
+          "what": "Sort the distinct pieces and number them from 0.",
+          "in": "4,690 pieces",
+          "out": "1,130 entries",
+          "shape": "1,130 entries",
+          "size": 1130,
+          "code": {
+            "key": "tok_vocab",
+            "highlight": ["vocab = {token:integer for integer, token in enumerate(all_words)}"]
+          },
+          "values": [
+            {
+              "type": "chips",
+              "title": "The first entries (cell 5)",
+              "note": "Punctuation sorts first, then capitals, then lower case. 1,130 entries in all (cell 4).",
+              "rows": [
+                {
+                  "label": "entry",
+                  "items": [["!", "0"], ["\"", "1"], ["'", "2"], ["(", "3"], [")", "4"], [",", "5"], ["--", "6"], [".", "7"]]
+                }
+              ],
+              "ref": "out:tokenizer.ipynb#5"
+            }
+          ]
+        },
+        {
+          "id": "tk-v1",
+          "name": "Encode and decode",
+          "sub": "SimpleTokenizerV1",
+          "kind": "module",
+          "what": "A class that maps pieces to IDs and back. decode rejoins with spaces, then pulls punctuation back against the word before it.",
+          "in": "a sentence from the story",
+          "out": "20 IDs, and the sentence back",
+          "shape": "20 IDs",
+          "size": 20,
+          "code": {
+            "key": "SimpleTokenizerV1",
+            "highlight": ["ids = [self.str_to_int[s] for s in preprocessed]", "text = re.sub("]
+          },
+          "values": [
+            {
+              "type": "chips",
+              "title": "“It's the last he painted, you know,” … (cell 8)",
+              "rows": [
+                {
+                  "label": "id",
+                  "items": [["56", "It"], ["2", "'"], ["850", "s"], ["988", "the"], ["602", "last"], ["533", "he"], ["746", "painted"], ["5", ","]]
+                }
+              ],
+              "ref": "out:tokenizer.ipynb#8"
+            }
+          ],
+          "flags": [
+            {
+              "text": "decode removes spaces only before punctuation, so “It's” comes back as “It' s” (cell 9).",
+              "level": "info"
+            }
+          ]
+        },
+        {
+          "id": "tk-unk",
+          "name": "Unknown words",
+          "sub": "<|unk|> · <|endoftext|>",
+          "kind": "module",
+          "what": "V1 fails on any word the story doesn’t contain, so add two special tokens and let SimpleTokenizerV2 map unknown pieces to <|unk|>.",
+          "in": "“Hello, It's the last …”",
+          "out": "22 IDs, Hello as 1131",
+          "shape": "22 IDs",
+          "size": 22,
+          "code": {"key": "SimpleTokenizerV2", "highlight": ["else \"<|unk|>\""]},
+          "values": [
+            {
+              "type": "chips",
+              "title": "The same sentence with “Hello, ” in front (cell 16)",
+              "rows": [
+                {
+                  "label": "id",
+                  "items": [["1131", "<|unk|>"], ["5", ","], ["56", "It"], ["2", "'"], ["850", "s"]]
+                }
+              ],
+              "ref": "out:tokenizer.ipynb#16"
+            },
+            {
+              "type": "kv",
+              "title": "The two new entries (cell 13)",
+              "rows": [["<|endoftext|>", "1130"], ["<|unk|>", "1131"]],
+              "ref": "out:tokenizer.ipynb#13"
+            }
+          ],
+          "flags": [
+            {
+              "text": "Cell 11 stops with KeyError: 'Hello'. The failure is the point of that cell: it shows why V2 is needed.",
+              "level": "info",
+              "refs": ["out:tokenizer.ipynb#11:KeyError: 'Hello'"]
+            }
+          ]
+        },
+        {
+          "id": "tk-bpe",
+          "name": "Byte-pair encoding",
+          "sub": "tiktoken · gpt2",
+          "kind": "module",
+          "what": "GPT-2’s tokenizer splits a word it doesn’t know into known sub-word pieces, so nothing is unknown. Training uses this one.",
+          "in": "any text",
+          "out": "IDs from a 50,257-entry vocabulary",
+          "shape": "IDs",
+          "code": {"key": "tok_tiktoken", "highlight": ["tokenizer = tiktoken.get_encoding(\"gpt2\")"]},
+          "values": [
+            {
+              "type": "chips",
+              "title": "“someunkownPlace”, a word no dictionary has (cell 18)",
+              "note": "Four known pieces, and the round trip gives the word back. The pieces were measured by decoding each ID.",
+              "rows": [
+                {
+                  "label": "id",
+                  "items": [["11246", "some"], ["2954", "unk"], ["593", "own"], ["27271", "Place"]]
+                }
+              ],
+              "ref": "out:tokenizer.ipynb#18"
+            },
+            {
+              "type": "kv",
+              "title": "Special token",
+              "rows": [["<|endoftext|>", "50256, the last ID"], ["The whole story", "5,145 IDs"]]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dataloader",
+      "name": "Data loader",
+      "study": true,
+      "what": "How dataloader.ipynb turns the story’s IDs into input and target batches, and the embedding tables that read them.",
+      "trigger": "Opens the Batch station: dataloader.ipynb builds the input and target windows with 4-token windows and batches of 8, then looks them up in embedding tables.",
+      "steps": [
+        {
+          "id": "dl-encode",
+          "name": "Encode the story",
+          "sub": "tiktoken · gpt2",
+          "kind": "byhand",
+          "what": "Turn the whole story into GPT-2 token IDs.",
+          "in": "20,479 chars",
+          "out": "5,145 IDs",
+          "shape": "5,145 IDs",
+          "size": 5145,
+          "code": {"key": "dl_encode", "highlight": ["encoded_text = tokenizer.encode(raw_text)"]}
+        },
+        {
+          "id": "dl-pairs",
+          "name": "Next-token pairs",
+          "sub": "context size 4",
+          "kind": "byhand",
+          "what": "Skip the first 50 tokens, then read input x and target y one token apart: each start of x predicts the next token.",
+          "in": "5,095 IDs",
+          "out": "4 prediction tasks",
+          "shape": "4 tasks",
+          "size": 4,
+          "code": {"key": "dl_pairs", "highlight": ["desired = enc_sample[i]"]},
+          "values": [
+            {
+              "type": "chips",
+              "title": "x and y, one token apart (cell 4)",
+              "note": "Read x up to any point, and y’s token there is the one to predict.",
+              "rows": [
+                {
+                  "label": "x",
+                  "items": [["290", " and"], ["4920", " established"], ["2241", " himself"], ["287", " in"]]
+                },
+                {
+                  "label": "y",
+                  "items": [["4920", " established"], ["2241", " himself"], ["287", " in"], ["257", " a"]],
+                  "offset": 1
+                }
+              ],
+              "ref": "out:dataloader.ipynb#4"
+            }
+          ]
+        },
+        {
+          "id": "dl-dataset",
+          "name": "Sliding-window dataset",
+          "sub": "GPTDatasetV1",
+          "kind": "module",
+          "what": "Slide a window of max_length tokens along the IDs, stride tokens at a time, and keep each window with its copy shifted one token on.",
+          "in": "5,145 IDs",
+          "out": "window pairs of (4,) and (4,)",
+          "shape": "(4,) ×2",
+          "code": {
+            "key": "dataloader.ipynb#GPTDatasetV1",
+            "highlight": ["for i in range(0, len(token_ids) - max_length, stride):", "target_chunk = token_ids[i+1: i+max_length+1]"]
+          },
+          "flags": [
+            {
+              "text": "The same class as Full_Architecture’s GPTDatasetV1, which training uses with 256-token windows.",
+              "level": "info"
+            }
+          ]
+        },
+        {
+          "id": "dl-loader",
+          "name": "Batch with DataLoader",
+          "sub": "8 windows of 4",
+          "kind": "module",
+          "what": "Wrap the dataset in a PyTorch DataLoader, which stacks batch_size windows into one tensor.",
+          "in": "the dataset",
+          "out": "inputs (8, 4) · targets (8, 4)",
+          "shape": "(8, 4) ×2",
+          "size": 64,
+          "facts": [["batch_size", "8", "dl_batches"], ["max_length", "4", "dl_batches"], ["stride", "4", "dl_batches"], ["shuffle", "False", "dl_batches"]],
+          "code": {"key": "dataloader.ipynb#create_dataloader_v1", "highlight": ["drop_last=drop_last"]},
+          "values": [
+            {
+              "type": "chips",
+              "title": "First window of the first batch (cell 9)",
+              "rows": [
+                {
+                  "label": "input",
+                  "items": [["40", "I"], ["367", " H"], ["2885", "AD"], ["1464", " always"]]
+                },
+                {
+                  "label": "target",
+                  "items": [["367", " H"], ["2885", "AD"], ["1464", " always"], ["1807", " thought"]],
+                  "offset": 1
+                }
+              ],
+              "ref": "out:dataloader.ipynb#9"
+            }
+          ],
+          "flags": [
+            {
+              "text": "This copy passes drop_last through. Full_Architecture’s copy hard-codes drop_last=True (see Stack in twos in the main flow).",
+              "level": "info"
+            }
+          ]
+        },
+        {
+          "id": "dl-embed",
+          "name": "Embed tokens and positions",
+          "sub": "two lookup tables",
+          "kind": "module",
+          "what": "Look up a learned vector for every token ID and for every position: the first thing the GPT model does with a batch.",
+          "in": "inputs (8, 4)",
+          "out": "(8, 4, 256) token vectors · (4, 256) position vectors",
+          "shape": "(8, 4, 256)",
+          "size": 8192,
+          "flags": [
+            {
+              "text": "The notebook stops here and never adds the two together. GPTModel does that add, in the Embeddings step inside the GPT model station.",
+              "level": "info"
+            }
+          ],
+          "children": [
+            {
+              "id": "dl-tok",
+              "name": "Token embeddings",
+              "sub": "50,257 × 256 table",
+              "what": "Each token ID picks its row of a random 50,257 × 256 table.",
+              "in": "(8, 4) IDs",
+              "out": "(8, 4, 256)",
+              "shape": "(8, 4, 256)",
+              "size": 8192,
+              "weights": "12,865,792",
+              "code": {
+                "key": "dl_tok_emb",
+                "highlight": ["token_embedding_layer = torch.nn.Embedding(vocab_size, output_dim)"]
+              }
+            },
+            {
+              "id": "dl-pos",
+              "name": "Position embeddings",
+              "sub": "4 × 256 table",
+              "what": "Each of the 4 positions picks its own row, the same for every window.",
+              "in": "positions 0–3",
+              "out": "(4, 256)",
+              "shape": "(4, 256)",
+              "size": 1024,
+              "weights": "1,024",
+              "code": {
+                "key": "dl_pos_emb",
+                "highlight": ["pos_embeddings = pos_embedding_layer(torch.arange(max_length))"]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "code": {
+    "GPT_CONFIG_124M": {
+      "title": "GPT_CONFIG_124M",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "GPT_CONFIG_124M",
+      "hash": "24cd82f59d47"
+    },
+    "GPTDatasetV1": {
+      "title": "class GPTDatasetV1",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "GPTDatasetV1",
+      "hash": "19795367a394"
+    },
+    "create_dataloader_v1": {
+      "title": "def create_dataloader_v1",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "create_dataloader_v1",
+      "hash": "12a58e7f03ab"
+    },
+    "MultiHeadAttention": {
+      "title": "class MultiHeadAttention",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "MultiHeadAttention",
+      "hash": "bb7b936d5c01"
+    },
+    "LayerNorm": {
+      "title": "class LayerNorm",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "LayerNorm",
+      "hash": "211f41b19607"
+    },
+    "GELU": {
+      "title": "class GELU",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "GELU",
+      "hash": "16e2ca35b95c"
+    },
+    "FeedForward": {
+      "title": "class FeedForward",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "FeedForward",
+      "hash": "0ec48c98af82"
+    },
+    "TransformerBlock": {
+      "title": "class TransformerBlock",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "TransformerBlock",
+      "hash": "a50ab130f32d"
+    },
+    "GPTModel": {
+      "title": "class GPTModel",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "GPTModel",
+      "hash": "a2e9a1c9c78f"
+    },
+    "calc_loss_batch": {
+      "title": "def calc_loss_batch",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "calc_loss_batch",
+      "hash": "cfbe5e32fa98"
+    },
+    "calc_loss_loader": {
+      "title": "def calc_loss_loader",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "calc_loss_loader",
+      "hash": "eb4949346a75"
+    },
+    "train_model_simple": {
+      "title": "def train_model_simple",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "train_model_simple",
+      "hash": "fd1fac2b1f97"
+    },
+    "evaluate_model": {
+      "title": "def evaluate_model",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "evaluate_model",
+      "hash": "d71d0ebc4cb4"
+    },
+    "generate_and_print_sample": {
+      "title": "def generate_and_print_sample",
+      "file": "Full_Architecture.ipynb",
+      "symbol": "generate_and_print_sample",
+      "hash": "1b08322ebf19"
+    },
+    "data_setup": {
+      "title": "loading and splitting the data",
+      "file": "Full_Architecture.ipynb",
+      "cell": 15,
+      "hash": "48c570d6fd59"
+    },
+    "train_run": {
+      "title": "the training run",
+      "file": "Full_Architecture.ipynb",
+      "cell": 17,
+      "hash": "95937f6af758"
+    },
+    "adam_inside": {
+      "title": "inside optimizer.step()",
+      "label": "PyTorch AdamW, per weight",
+      "src": "# for every weight w with gradient g, at step t\nw = w - lr * weight_decay * w                 # weight decay\nm = beta1 * m + (1 - beta1) * g               # smoothed gradient   (beta1 = 0.9)\nv = beta2 * v + (1 - beta2) * g**2            # smoothed scale      (beta2 = 0.999)\nm_hat = m / (1 - beta1**t)                    # bias correction\nv_hat = v / (1 - beta2**t)\nw = w - lr * m_hat / (sqrt(v_hat) + eps)      # the step"
+    },
+    "attn_scores_all": {"title": "every score at once", "file": "attention.ipynb", "cell": 5, "hash": "34674bf9bd8e"},
+    "attn_weights_simple": {"title": "softmax over each row", "file": "attention.ipynb", "cell": 6, "hash": "3274b6c45dce"},
+    "attn_context_simple": {
+      "title": "every context vector at once",
+      "file": "attention.ipynb",
+      "cell": 8,
+      "hash": "22cf9e0287ad"
+    },
+    "attn_qkv_params": {
+      "title": "three random weight matrices",
+      "file": "attention.ipynb",
+      "cell": 12,
+      "hash": "93eddc506aac"
+    },
+    "attn_scores_query2": {
+      "title": "scores for the query of journey",
+      "file": "attention.ipynb",
+      "cell": 18,
+      "hash": "02cf104b1e1c"
+    },
+    "attn_scaled_softmax": {"title": "scaled softmax", "file": "attention.ipynb", "cell": 19, "hash": "06826128218d"},
+    "attn_context_trainable": {"title": "the context vector", "file": "attention.ipynb", "cell": 20, "hash": "cf2290e52ed3"},
+    "SelfAttention_v1": {
+      "title": "class SelfAttention_v1",
+      "file": "attention.ipynb",
+      "symbol": "SelfAttention_v1",
+      "hash": "ee93b61f6152"
+    },
+    "attn_mask_renorm": {
+      "title": "zero the future, renormalise",
+      "file": "attention.ipynb",
+      "cell": 31,
+      "hash": "6f84bd05a744"
+    },
+    "attn_mask_inf": {"title": "mask with −∞", "file": "attention.ipynb", "cell": 32, "hash": "a3c45328547f"},
+    "attn_dropout": {"title": "a dropout layer", "file": "attention.ipynb", "cell": 35, "hash": "203346b07b00"},
+    "CausalAttention": {
+      "title": "class CausalAttention",
+      "file": "attention.ipynb",
+      "symbol": "CausalAttention",
+      "hash": "3f7ce31d3df0"
+    },
+    "MultiHeadAttentionWrapper": {
+      "title": "class MultiHeadAttentionWrapper",
+      "file": "attention.ipynb",
+      "symbol": "MultiHeadAttentionWrapper",
+      "hash": "5aaae06c330a"
+    },
+    "attention.ipynb#MultiHeadAttention": {
+      "title": "class MultiHeadAttention (attention.ipynb)",
+      "file": "attention.ipynb",
+      "symbol": "MultiHeadAttention",
+      "hash": "fc1ea15597ea"
+    },
+    "tok_download": {"title": "download the story", "file": "tokenizer.ipynb", "cell": 0, "hash": "20ba7be0cc84"},
+    "tok_split": {
+      "title": "split on punctuation and spaces",
+      "file": "tokenizer.ipynb",
+      "cell": 3,
+      "hash": "541fbdc775db"
+    },
+    "tok_vocab": {
+      "title": "number the distinct pieces",
+      "file": "tokenizer.ipynb",
+      "cell": 5,
+      "hash": "bbeff436dae7"
+    },
+    "SimpleTokenizerV1": {
+      "title": "class SimpleTokenizerV1",
+      "file": "tokenizer.ipynb",
+      "symbol": "SimpleTokenizerV1",
+      "hash": "bb47e4c75798"
+    },
+    "SimpleTokenizerV2": {
+      "title": "class SimpleTokenizerV2",
+      "file": "tokenizer.ipynb",
+      "symbol": "SimpleTokenizerV2",
+      "hash": "29d609d40b16"
+    },
+    "tok_tiktoken": {
+      "title": "GPT-2’s BPE through tiktoken",
+      "file": "tokenizer.ipynb",
+      "cell": 18,
+      "hash": "c16201aa1f2d"
+    },
+    "dl_encode": {
+      "title": "encode the whole story",
+      "file": "dataloader.ipynb",
+      "cell": 2,
+      "hash": "488b9b94b5a3"
+    },
+    "dl_pairs": {
+      "title": "context and the token it predicts",
+      "file": "dataloader.ipynb",
+      "cell": 5,
+      "hash": "a4135315d062"
+    },
+    "dataloader.ipynb#GPTDatasetV1": {
+      "title": "class GPTDatasetV1 (dataloader.ipynb)",
+      "file": "dataloader.ipynb",
+      "symbol": "GPTDatasetV1",
+      "hash": "ddc0739e4a81"
+    },
+    "dataloader.ipynb#create_dataloader_v1": {
+      "title": "def create_dataloader_v1 (dataloader.ipynb)",
+      "file": "dataloader.ipynb",
+      "symbol": "create_dataloader_v1",
+      "hash": "ca125d025d20"
+    },
+    "dl_tok_emb": {
+      "title": "a token embedding table",
+      "file": "dataloader.ipynb",
+      "cell": 11,
+      "hash": "05c4dbd32f27"
+    },
+    "dl_pos_emb": {
+      "title": "a position embedding table",
+      "file": "dataloader.ipynb",
+      "cell": 18,
+      "hash": "c8b57a2c545c"
+    },
+    "dl_batches": {"title": "The first batch", "file": "dataloader.ipynb", "cell": 9, "hash": "437540874046"},
+    "rnn_ids": {"title": "three words of the story", "file": "rnn.ipynb", "cell": 1, "hash": "ca45f9acfc8b"},
+    "rnn_embed": {"title": "a 3-number embedding", "file": "rnn.ipynb", "cell": 3, "hash": "318de03d84a9"},
+    "rnn_weights": {"title": "two random weight matrices", "file": "rnn.ipynb", "cell": 4, "hash": "4bda0677c87f"},
+    "rnn_loop": {"title": "read one word at a time", "file": "rnn.ipynb", "cell": 5, "hash": "41f879fa6c26"},
+    "rnn": {"title": "def rnn", "file": "rnn.ipynb", "symbol": "rnn", "hash": "2aa54961e843"},
+    "rnn_swap": {"title": "swap the first or last word", "file": "rnn.ipynb", "cell": 8, "hash": "6da13af45030"}
+  },
+  "refs": {
+    "nn.Embedding": {
+      "lib": "PyTorch",
+      "sig": "torch.nn.Embedding(num_embeddings, embedding_dim)",
+      "text": "A lookup table of learned vectors. Call it with integer IDs and it returns the matching rows. Its weight has shape (num_embeddings, embedding_dim)."
+    },
+    "nn.Linear": {
+      "lib": "PyTorch",
+      "sig": "torch.nn.Linear(in_features, out_features, bias=True)",
+      "text": "Computes x @ W.T + b on the last dimension of x. W has shape (out_features, in_features), one row per output."
+    },
+    "nn.Dropout": {
+      "lib": "PyTorch",
+      "sig": "torch.nn.Dropout(p)",
+      "text": "In training mode it zeroes each number with probability p and scales the rest by 1 / (1 − p). After model.eval() it does nothing."
+    },
+    "nn.Sequential": {
+      "lib": "PyTorch",
+      "sig": "torch.nn.Sequential(*modules)",
+      "text": "Runs its modules in order, passing each output to the next."
+    },
+    "nn.Parameter": {
+      "lib": "PyTorch",
+      "sig": "torch.nn.Parameter(tensor)",
+      "text": "Marks a tensor as a weight of the module, so it shows up in model.parameters() and gets trained."
+    },
+    "nn.Module": {
+      "lib": "PyTorch",
+      "sig": "torch.nn.Module",
+      "text": "The base class for every layer and model. Calling a module runs its forward method."
+    },
+    "Dataset": {
+      "lib": "PyTorch",
+      "sig": "torch.utils.data.Dataset",
+      "text": "Anything with __len__ and __getitem__. A DataLoader uses those two methods to fetch items."
+    },
+    "DataLoader": {
+      "lib": "PyTorch",
+      "sig": "torch.utils.data.DataLoader(dataset, batch_size, shuffle, drop_last, num_workers)",
+      "text": "Pulls items from a Dataset, optionally in a random order, and stacks them into batches."
+    },
+    "nn.functional.cross_entropy": {
+      "lib": "PyTorch",
+      "sig": "torch.nn.functional.cross_entropy(input, target)",
+      "text": "Applies log-softmax over the last dimension of input, picks the log-probability of each target index, and returns the negative mean."
+    },
+    "torch.softmax": {
+      "lib": "PyTorch",
+      "sig": "torch.softmax(input, dim)",
+      "text": "Exponentiates and normalizes along dim so the values there are positive and sum to 1."
+    },
+    "torch.triu": {
+      "lib": "PyTorch",
+      "sig": "torch.triu(input, diagonal=0)",
+      "text": "Keeps the upper triangle of a matrix and zeroes the rest. With diagonal=1 it keeps only what is strictly above the diagonal: the future."
+    },
+    "tiktoken.get_encoding": {
+      "lib": "tiktoken",
+      "sig": "tiktoken.get_encoding(\"gpt2\")",
+      "text": "Loads GPT-2’s byte-pair tokenizer, with a vocabulary of 50,257 tokens."
+    },
+    "torch.optim.AdamW": {
+      "lib": "PyTorch",
+      "sig": "torch.optim.AdamW(params, lr, weight_decay)",
+      "text": "Adam with decoupled weight decay. Each step moves every weight by its own scaled amount and shrinks it slightly toward 0."
+    }
+  },
+  "history": [
+    {
+      "date": "2026-11-05",
+      "summary": "Map created: training flow, evaluation and sampling, and four study lines (Tokenizer, Data loader, RNN, Attention)"
+    }
+  ],
+  "groups": [
+    {"id": "data", "label": "Data"},
+    {"id": "model", "label": "Model"},
+    {"id": "training", "label": "Training"}
+  ],
+  "parts": [
+    {
+      "id": "GPTDatasetV1",
+      "level": "component",
+      "kind": "class",
+      "title": "GPTDatasetV1",
+      "group": "data",
+      "refs": ["GPTDatasetV1"],
+      "summary": {
+        "text": "Turns one long text into training pairs: it encodes the text with the tokenizer, slides a window of max_length tokens along it every stride tokens, and pairs each window with the same window shifted one token on as its target.",
+        "refs": ["GPTDatasetV1"]
+      },
+      "does": [
+        {
+          "text": "Builds input_ids and target_ids in its constructor, so indexing returns one (input, target) pair of tensors.",
+          "refs": ["GPTDatasetV1"]
+        }
+      ]
+    },
+    {
+      "id": "create_dataloader_v1",
+      "level": "component",
+      "kind": "function",
+      "title": "create_dataloader_v1",
+      "group": "data",
+      "refs": ["create_dataloader_v1"],
+      "summary": {
+        "text": "Wraps GPTDatasetV1 in a PyTorch DataLoader with the GPT-2 tokenizer, so training reads shuffled batches of input and target windows.",
+        "refs": ["create_dataloader_v1"]
+      },
+      "facts": [["batch_size", "4", "create_dataloader_v1"], ["stride", "128", "create_dataloader_v1"], ["tokenizer", "gpt2", "create_dataloader_v1"]],
+      "gotchas": [
+        {
+          "text": "It always passes drop_last=True to the DataLoader, whatever its drop_last argument says, so an incomplete last batch is dropped even when the caller asks to keep it.",
+          "refs": ["create_dataloader_v1"]
+        }
+      ]
+    },
+    {
+      "id": "GPT_CONFIG_124M",
+      "level": "component",
+      "kind": "config",
+      "title": "GPT_CONFIG_124M",
+      "group": "model",
+      "subgroup": "Whole model",
+      "refs": ["GPT_CONFIG_124M"],
+      "summary": {
+        "text": "The sizes every model class reads: vocabulary, context length, embedding width, heads, layers, dropout and the query-key-value bias, at GPT-2 small's 124M-parameter settings with a shorter context.",
+        "refs": ["GPT_CONFIG_124M"]
+      },
+      "facts": [["vocab_size", "50257", "GPT_CONFIG_124M"], ["context_length", "256", "GPT_CONFIG_124M"], ["emb_dim", "768", "GPT_CONFIG_124M"], ["n_heads", "12", "GPT_CONFIG_124M"], ["n_layers", "12", "GPT_CONFIG_124M"], ["drop_rate", "0.1", "GPT_CONFIG_124M"]]
+    },
+    {
+      "id": "GPTModel",
+      "level": "component",
+      "kind": "class",
+      "title": "GPTModel",
+      "group": "model",
+      "subgroup": "Whole model",
+      "refs": ["GPTModel"],
+      "summary": {
+        "text": "The whole model: token and position embeddings, n_layers TransformerBlocks in sequence, a final LayerNorm and a linear output head that scores every vocabulary token at every position.",
+        "refs": ["GPTModel"]
+      },
+      "does": [
+        {
+          "text": "Adds the token embedding of each id to the embedding of its position, then applies dropout before the blocks.",
+          "refs": ["GPTModel"]
+        },
+        {
+          "text": "Returns logits of shape (batch, tokens, vocab_size); the output head has no bias.",
+          "refs": ["GPTModel"]
+        }
+      ]
+    },
+    {
+      "id": "TransformerBlock",
+      "level": "component",
+      "kind": "class",
+      "title": "TransformerBlock",
+      "group": "model",
+      "subgroup": "Inside a block",
+      "refs": ["TransformerBlock"],
+      "summary": {
+        "text": "One transformer block: LayerNorm, multi-head attention and dropout added back to a shortcut, then LayerNorm, feed-forward and dropout added back to a second shortcut; the shape of its input and output is the same.",
+        "refs": ["TransformerBlock"]
+      }
+    },
+    {
+      "id": "MultiHeadAttention",
+      "level": "component",
+      "kind": "class",
+      "title": "MultiHeadAttention",
+      "group": "model",
+      "subgroup": "Inside a block",
+      "refs": ["MultiHeadAttention"],
+      "summary": {
+        "text": "Causal multi-head self-attention: it projects every token to queries, keys and values, splits them into n_heads heads, masks out later tokens, and mixes the values by softmaxed, scaled scores before an output projection joins the heads.",
+        "refs": ["MultiHeadAttention"]
+      },
+      "facts": [["head_dim", "d_out // num_heads", "MultiHeadAttention"], ["mask", "torch.triu", "MultiHeadAttention"]]
+    },
+    {
+      "id": "LayerNorm",
+      "level": "component",
+      "kind": "class",
+      "title": "LayerNorm",
+      "group": "model",
+      "subgroup": "Inside a block",
+      "refs": ["LayerNorm"],
+      "summary": {
+        "text": "Normalizes each token's vector to mean 0 and variance 1 over its emb_dim numbers, then applies a learned scale and shift.",
+        "refs": ["LayerNorm"]
+      },
+      "facts": [["eps", "1e-5", "LayerNorm"]]
+    },
+    {
+      "id": "FeedForward",
+      "level": "component",
+      "kind": "class",
+      "title": "FeedForward",
+      "group": "model",
+      "subgroup": "Inside a block",
+      "refs": ["FeedForward"],
+      "summary": {
+        "text": "The position-wise feed-forward network: a linear layer to four times emb_dim, GELU, and a linear layer back, applied to each token on its own.",
+        "refs": ["FeedForward"]
+      },
+      "facts": [["hidden width", "4 * cfg[\"emb_dim\"]", "FeedForward"]]
+    },
+    {
+      "id": "GELU",
+      "level": "component",
+      "kind": "class",
+      "title": "GELU",
+      "group": "model",
+      "subgroup": "Inside a block",
+      "refs": ["GELU"],
+      "summary": {
+        "text": "The activation inside FeedForward, in the tanh approximation GPT-2 used.",
+        "refs": ["GELU"]
+      },
+      "facts": [["form", "tanh", "GELU"]]
+    },
+    {
+      "id": "train_model_simple",
+      "level": "component",
+      "kind": "function",
+      "title": "train_model_simple",
+      "group": "training",
+      "subgroup": "Learn",
+      "refs": ["train_model_simple"],
+      "summary": {
+        "text": "The training loop: for every batch of every epoch it clears the gradients, computes the batch loss, backpropagates and steps the optimizer, evaluating every eval_freq steps and printing a sample after each epoch.",
+        "refs": ["train_model_simple"]
+      }
+    },
+    {
+      "id": "calc_loss_batch",
+      "level": "component",
+      "kind": "function",
+      "title": "calc_loss_batch",
+      "group": "training",
+      "subgroup": "Learn",
+      "refs": ["calc_loss_batch"],
+      "summary": {
+        "text": "The loss of one batch: the model's logits against the target ids, flattened across the batch and positions, under cross-entropy.",
+        "refs": ["calc_loss_batch"]
+      }
+    },
+    {
+      "id": "calc_loss_loader",
+      "level": "component",
+      "kind": "function",
+      "title": "calc_loss_loader",
+      "group": "training",
+      "subgroup": "Check progress",
+      "refs": ["calc_loss_loader"],
+      "summary": {
+        "text": "The average batch loss over the first num_batches batches of a loader, or every batch when none is given.",
+        "refs": ["calc_loss_loader"]
+      }
+    },
+    {
+      "id": "evaluate_model",
+      "level": "component",
+      "kind": "function",
+      "title": "evaluate_model",
+      "group": "training",
+      "subgroup": "Check progress",
+      "refs": ["evaluate_model"],
+      "summary": {
+        "text": "Measures the training and validation loss over eval_iter batches each with dropout off and no gradients, then puts the model back in training mode.",
+        "refs": ["evaluate_model"]
+      }
+    },
+    {
+      "id": "generate_and_print_sample",
+      "level": "component",
+      "kind": "function",
+      "title": "generate_and_print_sample",
+      "group": "training",
+      "subgroup": "Check progress",
+      "refs": ["generate_and_print_sample"],
+      "summary": {
+        "text": "Prints 50 tokens the model generates from a starting text, with dropout off.",
+        "refs": ["generate_and_print_sample"]
+      },
+      "gotchas": [
+        {
+          "text": "It calls text_to_token_ids, generate_text_simple and token_ids_to_text, which no notebook in the folder defines.",
+          "refs": ["undef:.#generate_text_simple", "undef:.#text_to_token_ids", "undef:.#token_ids_to_text"]
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "create_dataloader_v1",
+      "to": "GPTDatasetV1",
+      "via": "call",
+      "label": "builds the dataset of windows",
+      "refs": ["create_dataloader_v1"]
+    },
+    {
+      "from": "create_dataloader_v1",
+      "to": "train_model_simple",
+      "via": "data",
+      "label": "its batches feed the loop",
+      "refs": ["data_setup", "train_run"]
+    },
+    {
+      "from": "GPTModel",
+      "to": "TransformerBlock",
+      "via": "call",
+      "label": "runs n_layers blocks in sequence",
+      "refs": ["GPTModel"]
+    },
+    {
+      "from": "GPTModel",
+      "to": "LayerNorm",
+      "via": "call",
+      "label": "final_norm",
+      "refs": ["GPTModel"]
+    },
+    {
+      "from": "GPTModel",
+      "to": "GPT_CONFIG_124M",
+      "via": "data",
+      "label": "reads its sizes",
+      "refs": ["GPTModel"]
+    },
+    {
+      "from": "TransformerBlock",
+      "to": "MultiHeadAttention",
+      "via": "call",
+      "label": "att",
+      "refs": ["TransformerBlock"]
+    },
+    {
+      "from": "TransformerBlock",
+      "to": "LayerNorm",
+      "via": "call",
+      "label": "norm1, norm2",
+      "refs": ["TransformerBlock"]
+    },
+    {
+      "from": "TransformerBlock",
+      "to": "FeedForward",
+      "via": "call",
+      "label": "ff",
+      "refs": ["TransformerBlock"]
+    },
+    {
+      "from": "FeedForward",
+      "to": "GELU",
+      "via": "call",
+      "label": "between its two layers",
+      "refs": ["FeedForward"]
+    },
+    {
+      "from": "train_model_simple",
+      "to": "calc_loss_batch",
+      "via": "call",
+      "label": "loss of each batch",
+      "refs": ["train_model_simple"]
+    },
+    {
+      "from": "train_model_simple",
+      "to": "evaluate_model",
+      "via": "call",
+      "label": "every eval_freq steps",
+      "refs": ["train_model_simple"]
+    },
+    {
+      "from": "train_model_simple",
+      "to": "generate_and_print_sample",
+      "via": "call",
+      "label": "after each epoch",
+      "refs": ["train_model_simple"]
+    },
+    {
+      "from": "calc_loss_batch",
+      "to": "GPTModel",
+      "via": "call",
+      "label": "forward pass for logits",
+      "refs": ["calc_loss_batch"]
+    },
+    {
+      "from": "calc_loss_loader",
+      "to": "calc_loss_batch",
+      "via": "call",
+      "label": "per batch",
+      "refs": ["calc_loss_loader"]
+    },
+    {
+      "from": "evaluate_model",
+      "to": "calc_loss_loader",
+      "via": "call",
+      "label": "train and validation loss",
+      "refs": ["evaluate_model"]
+    },
+    {
+      "from": "generate_and_print_sample",
+      "to": "GPTModel",
+      "via": "call",
+      "label": "through generate_text_simple",
+      "refs": ["generate_and_print_sample", "undef:.#generate_text_simple"]
+    }
+  ],
+  "sequences": [
+    {
+      "id": "training-step",
+      "title": "One training step",
+      "summary": {
+        "text": "What one batch does inside train_model_simple: the loss runs the model forward through every block, then backward and the optimizer change every weight.",
+        "refs": ["train_model_simple", "calc_loss_batch", "GPTModel"]
+      },
+      "trigger": {
+        "text": "Every batch of every epoch, in train_model_simple's inner loop.",
+        "refs": ["train_model_simple"]
+      },
+      "participants": ["train_model_simple", "calc_loss_batch", "GPTModel", "TransformerBlock", "MultiHeadAttention", "FeedForward"],
+      "steps": [
+        {
+          "from": "train_model_simple",
+          "to": "train_model_simple",
+          "kind": "call",
+          "label": "optimizer.zero_grad() clears the last batch's gradients",
+          "refs": ["train_model_simple"]
+        },
+        {
+          "from": "train_model_simple",
+          "to": "calc_loss_batch",
+          "kind": "call",
+          "label": "calc_loss_batch(input_batch, target_batch, model, device)",
+          "refs": ["train_model_simple"]
+        },
+        {
+          "from": "calc_loss_batch",
+          "to": "GPTModel",
+          "kind": "call",
+          "label": "model(input_batch): the forward pass",
+          "refs": ["calc_loss_batch"]
+        },
+        {
+          "from": "GPTModel",
+          "to": "TransformerBlock",
+          "kind": "call",
+          "label": "token plus position embeddings, then each of the 12 blocks in turn",
+          "refs": ["GPTModel"]
+        },
+        {
+          "from": "TransformerBlock",
+          "to": "MultiHeadAttention",
+          "kind": "call",
+          "label": "norm1, then attention: each token looks at the ones before it",
+          "refs": ["TransformerBlock"]
+        },
+        {
+          "from": "MultiHeadAttention",
+          "to": "TransformerBlock",
+          "kind": "return",
+          "label": "context vectors, added back onto the shortcut",
+          "refs": ["MultiHeadAttention"]
+        },
+        {
+          "from": "TransformerBlock",
+          "to": "FeedForward",
+          "kind": "call",
+          "label": "norm2, then the feed-forward network on each token",
+          "refs": ["TransformerBlock"]
+        },
+        {
+          "from": "FeedForward",
+          "to": "TransformerBlock",
+          "kind": "return",
+          "label": "768 → 3072 → 768, added onto the second shortcut",
+          "refs": ["FeedForward"]
+        },
+        {
+          "from": "TransformerBlock",
+          "to": "GPTModel",
+          "kind": "return",
+          "label": "the same shape out as in, into the next block",
+          "refs": ["TransformerBlock"]
+        },
+        {
+          "from": "GPTModel",
+          "to": "calc_loss_batch",
+          "kind": "return",
+          "label": "logits after final_norm and out_head",
+          "refs": ["GPTModel"]
+        },
+        {
+          "from": "calc_loss_batch",
+          "to": "train_model_simple",
+          "kind": "return",
+          "label": "cross-entropy against the targets",
+          "refs": ["calc_loss_batch"]
+        },
+        {
+          "from": "train_model_simple",
+          "to": "train_model_simple",
+          "kind": "call",
+          "label": "loss.backward(), then optimizer.step() moves every weight",
+          "refs": ["train_model_simple"]
+        }
+      ]
+    }
+  ]
+}
